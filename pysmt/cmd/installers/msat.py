@@ -41,7 +41,7 @@ class MSatInstaller(SolverInstaller):
             # Since version 5.6.7 the architecture is not included in the
             # pkg name for the OSX release as it is considered a "univeral binary"
             archive_name_template = "mathsat-{version}-{os}.{ext}"
-            format["os"] = "osx"
+            format["os"] = "macos"
 
         archive_name = archive_name_template.format(**format)
 
@@ -103,7 +103,7 @@ class MSatInstaller(SolverInstaller):
             if f.endswith(".so") or f.endswith(".dll") or f.endswith(".dylib"):
                 SolverInstaller.mv(os.path.join(libdir, f), self.bindings_dir)
 
-        # Fix issue in MathSAT 5.6.10 linking to incorrect directory on OSX
+        # Fix issue in MathSAT 5.6.10 linking to incorrect directory on MacOS
         if self.os_name == "darwin":
             soname = glob.glob(self.bindings_dir + "/_mathsat*.so")[0]
             old_path = "/Users/alb/src/release/build/libmathsat.dylib"
