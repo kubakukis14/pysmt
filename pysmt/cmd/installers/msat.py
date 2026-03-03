@@ -34,9 +34,9 @@ class MSatInstaller(SolverInstaller):
                 "ext": "tar.gz"
         }
         if self.os_name == "windows":
+            archive_name_template = "mathsat-{version}-{os}.{ext}"
             format["ext"] = "zip"
-            format["arch"] = "msvc"
-            format["os"] = "win64" if self.architecture == "x86_64" else "win32"
+            format["os"] = "win64"
         elif self.os_name == "darwin":
             # Since version 5.6.7 the architecture is not included in the
             # pkg name for the OSX release as it is considered a "univeral binary"
