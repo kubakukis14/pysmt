@@ -244,6 +244,7 @@ class SolverInstaller(object):
         dest (if dest is a file name) otherwise moves source_file in
         the directory dest
         """
+        print("Moving %s to %s" % (source, dest))
         if os.path.isdir(dest):
             dest = os.path.join(dest, os.path.basename(source))
 
