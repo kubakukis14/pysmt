@@ -60,7 +60,7 @@ jobs:
             pysmt_solver: yices
           - os: windows-latest
             pysmt_solver: none
-          - os: windows-latest
+          - os: windows-2022
             pysmt_solver: msat
           - os: windows-latest
             pysmt_solver: z3
