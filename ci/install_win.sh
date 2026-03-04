@@ -29,7 +29,7 @@ if [ "${PYSMT_SOLVER}" == "msat" ] || [ "${PYSMT_SOLVER}" == "all" ]
 then
     python pysmt/cmd/check_version.py msat
     ls -l "C:/Users/runneradmin/AppData/Roaming/Python/Python313/site-packages/"
-    cp "$VCPKG_ROOT/lib/mpir.dll" "C:/Users/runneradmin/AppData/Roaming/Python/Python313/site-packages/"
+    cp "$VCPKG_ROOT/bin/mpir.dll" "C:/Users/runneradmin/AppData/Roaming/Python/Python313/site-packages/"
     python -v -c "import mathsat; print(mathsat.__version__)"
 fi
 
