@@ -25,4 +25,9 @@ fi
 # Install the solvers
 python install.py --confirm-agreement
 
+if [ "${PYSMT_SOLVER}" == "msat" ] || [ "${PYSMT_SOLVER}" == "all" ]
+then
+    python pysmt/cmd/check_version.py msat
+fi
+
 python install.py --check

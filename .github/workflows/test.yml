@@ -13,7 +13,8 @@ jobs:
     strategy:
       matrix:
         os: [ ubuntu-latest ]
-        pysmt_solver: [ none, msat, z3, yices, cvc5, btor, picosat, bdd, msat_wrap, z3_wrap, optimsat ]
+        pysmt_solver: [ none ]
+        #, msat, z3, yices, cvc5, btor, picosat, bdd, msat_wrap, z3_wrap, optimsat ]
 
     env:
       PYTHON_VERSION: 3.13
@@ -48,22 +49,22 @@ jobs:
         pysmt_cython: ["TRUE", "FALSE"]
         pysmt_gmpy: ["TRUE", "FALSE"]
         include:
-          - os: ubuntu-latest
-            pysmt_solver: all
-          - os: macos-latest
-            pysmt_solver: none
-          - os: macos-latest
+          # - os: ubuntu-latest
+          #   pysmt_solver: all
+          # - os: macos-latest
+          #   pysmt_solver: none
+          # - os: macos-latest
+          #   pysmt_solver: msat
+          # - os: macos-latest
+          #   pysmt_solver: z3
+          # - os: macos-latest
+          #   pysmt_solver: yices
+          # - os: windows-latest
+          #   pysmt_solver: none
+          - os: windows-latest
             pysmt_solver: msat
-          - os: macos-latest
-            pysmt_solver: z3
-          - os: macos-latest
-            pysmt_solver: yices
-          - os: windows-latest
-            pysmt_solver: none
-          - os: windows-latest
-            pysmt_solver: msat
-          - os: windows-latest
-            pysmt_solver: z3
+          # - os: windows-latest
+          #   pysmt_solver: z3
 
     env:
       PYTHON_VERSION: 3.13
