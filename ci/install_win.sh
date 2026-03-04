@@ -14,7 +14,7 @@ python -m pip install --upgrade setuptools
 if [ "${PYSMT_SOLVER}" == "msat" ] || [ "${PYSMT_SOLVER}" == "all" ]
 then
     # VCPKG_INSTALLATION_ROOT is a default env var on GH runners
-    VCPKG_ROOT="$GITHUB_WORKSPACE\vcpkg\installed\x64-windows"
+    VCPKG_ROOT="$GITHUB_WORKSPACE/vcpkg/installed/x64-windows"
 
     # Tell the compiler and linker where to look
     INCLUDE="$VCPKG_ROOT/include;$INCLUDE"
@@ -28,7 +28,9 @@ python install.py --confirm-agreement
 if [ "${PYSMT_SOLVER}" == "msat" ] || [ "${PYSMT_SOLVER}" == "all" ]
 then
     python pysmt/cmd/check_version.py msat
-    dumpbin //dependents "C:\Users\runneradmin\AppData\Roaming\Python\Python313\site-packages\_mathsat.cp313-win_amd64.pyd"
+    dumpbin \\dependents "C:/Users/runneradmin/AppData/Roaming/Python/Python313/site-packages/_mathsat.cp313-win_amd64.pyd"
+    ls -l "C:/Users/runneradmin/AppData/Roaming/Python/Python313/site-packages/"
+    cp "$VCPKG_ROOT/lib/mpir.dll" "C:/Users/runneradmin/AppData/Roaming/Python/Python313/site-packages/"
     python -v -c "import mathsat; print(mathsat.__version__)"
 fi
 
