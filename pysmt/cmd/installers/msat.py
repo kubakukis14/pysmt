@@ -58,22 +58,22 @@ class MSatInstaller(SolverInstaller):
 
 
     def compile(self):
-        if self.os_name == "windows":
-            libdir = os.path.join(self.python_bindings_dir, "../lib")
-            incdir = os.path.join(self.python_bindings_dir, "../include")
-            gmp_h_url = "https://github.com/mikand/tamer-windows-deps/raw/master/gmp/include/gmp.h"
-            mpir_dll_url = "https://github.com/Legrandin/mpir-windows-builds/blob/master/mpir-2.6.0_VS2015_%s/mpir.dll?raw=true" % self.bits
-            mpir_lib_url = "https://github.com/Legrandin/mpir-windows-builds/blob/master/mpir-2.6.0_VS2015_%s/mpir.lib?raw=true" % self.bits
-            setup_py_win_url = "https://github.com/pysmt/solvers_patches/raw/master/mathsat/setup-win.py"
+        # if self.os_name == "windows":
+        #     libdir = os.path.join(self.python_bindings_dir, "../lib")
+        #     incdir = os.path.join(self.python_bindings_dir, "../include")
+        #     gmp_h_url = "https://github.com/mikand/tamer-windows-deps/raw/master/gmp/include/gmp.h"
+        #     mpir_dll_url = "https://github.com/Legrandin/mpir-windows-builds/blob/master/mpir-2.6.0_VS2015_%s/mpir.dll?raw=true" % self.bits
+        #     mpir_lib_url = "https://github.com/Legrandin/mpir-windows-builds/blob/master/mpir-2.6.0_VS2015_%s/mpir.lib?raw=true" % self.bits
+        #     setup_py_win_url = "https://github.com/pysmt/solvers_patches/raw/master/mathsat/setup-win.py"
 
-            SolverInstaller.do_download(gmp_h_url, os.path.join(incdir, "gmp.h"))
-            SolverInstaller.do_download(mpir_dll_url, os.path.join(libdir, "mpir.dll"))
-            SolverInstaller.do_download(mpir_lib_url, os.path.join(libdir, "mpir.lib"))
+        #     # SolverInstaller.do_download(gmp_h_url, os.path.join(incdir, "gmp.h"))
+        #     # SolverInstaller.do_download(mpir_dll_url, os.path.join(libdir, "mpir.dll"))
+        #     # SolverInstaller.do_download(mpir_lib_url, os.path.join(libdir, "mpir.lib"))
 
-            # Overwrite setup.py with the patched version
-            setup_py = os.path.join(self.python_bindings_dir, "setup.py")
-            SolverInstaller.mv(setup_py, setup_py + ".original")
-            SolverInstaller.do_download(setup_py_win_url, setup_py)
+        #     # Overwrite setup.py with the patched version
+        #     setup_py = os.path.join(self.python_bindings_dir, "setup.py")
+        #     SolverInstaller.mv(setup_py, setup_py + ".original")
+        #     SolverInstaller.do_download(setup_py_win_url, setup_py)
 
         # Run setup.py to compile the bindings
         if self.os_name in {"windows", "darwin"}:
