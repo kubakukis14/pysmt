@@ -14,7 +14,7 @@ python -m pip install --upgrade setuptools
 if [ "${PYSMT_SOLVER}" == "msat" ] || [ "${PYSMT_SOLVER}" == "all" ]
 then
     # VCPKG_INSTALLATION_ROOT is a default env var on GH runners
-    VCPKG_ROOT="$VCPKG_INSTALLATION_ROOT/installed/x64-windows"
+    VCPKG_ROOT="$GITHUB_WORKSPACE\vcpkg\installed\x64-windows"
 
     # Tell the compiler and linker where to look
     INCLUDE="$VCPKG_ROOT/include;$INCLUDE"
