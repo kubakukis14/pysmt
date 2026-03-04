@@ -60,7 +60,7 @@ jobs:
             pysmt_solver: yices
           - os: windows-latest
             pysmt_solver: none
-          - os: windows-2022
+          - os: windows-latest
             pysmt_solver: msat
           - os: windows-latest
             pysmt_solver: z3
@@ -80,6 +80,15 @@ jobs:
         uses: actions/setup-python@65d7f2d534ac1bc67fcd62888c5f4f3d2cb2b236 #v4.7.1
         with:
           python-version: 3.8
+
+      - name: vcpkg build
+        if: (matrix.os == 'windows-latest' && (matrix.pysmt_solver == 'msat' || matrix.pysmt_solver == 'all'))
+        uses: johnwason/vcpkg-action@v7
+        id: vcpkg
+        with:
+          pkgs: mpir
+          triplet: x64-windows-release
+          token: ${{ github.token }}
 
       - name: Prepare System
         run: |
