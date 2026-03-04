@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [ "**" ]
 
+permissions:
+  contents: write
+
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  VCPKG_FEATURE_FLAGS: dependencygraph
+
 jobs:
   run-tests:
     runs-on: ${{ matrix.os }}
