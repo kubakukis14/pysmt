@@ -93,6 +93,7 @@ class MSatInstaller(SolverInstaller):
 
         # First, we need the SWIG-generated wrapper
         for f in os.listdir(sodir):
+            print("---> " + str(f))
             if "_mathsat" in f:
                 SolverInstaller.mv(os.path.join(sodir, f), self.bindings_dir)
         SolverInstaller.mv(os.path.join(pdir, "mathsat.py"), self.bindings_dir)
