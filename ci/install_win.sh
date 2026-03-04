@@ -28,6 +28,7 @@ python install.py --confirm-agreement
 if [ "${PYSMT_SOLVER}" == "msat" ] || [ "${PYSMT_SOLVER}" == "all" ]
 then
     python pysmt/cmd/check_version.py msat
+    python -c "import mathsat; print(mathsat.__version__)"
 fi
 
 python install.py --check

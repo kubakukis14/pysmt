@@ -88,7 +88,11 @@ jobs:
 
       - name: Install MPIR
         if: (matrix.os == 'windows-latest' && (matrix.pysmt_solver == 'msat' || matrix.pysmt_solver == 'all'))
-        run: vcpkg install mpir:x64-windows
+        uses: johnwason/vcpkg-action@v7
+        with:
+          pkgs: MPIR
+          triplet: x64-windows
+          token: ${{ github.token }}
 
       - name: Prepare System
         run: |
