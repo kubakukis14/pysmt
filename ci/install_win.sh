@@ -28,7 +28,7 @@ python install.py --confirm-agreement
 if [ "${PYSMT_SOLVER}" == "msat" ] || [ "${PYSMT_SOLVER}" == "all" ]
 then
     python pysmt/cmd/check_version.py msat
-    dumpbin /dependents "C:\Users\runneradmin\AppData\Roaming\Python\Python313\site-packages\_mathsat.cp313-win_amd64.pyd"
+    dumpbin //dependents "C:\Users\runneradmin\AppData\Roaming\Python\Python313\site-packages\_mathsat.cp313-win_amd64.pyd"
     python -v -c "import mathsat; print(mathsat.__version__)"
 fi
 
