@@ -81,14 +81,13 @@ jobs:
         with:
           python-version: 3.8
 
-      - name: vcpkg build
+      - name: Set up MSVC
         if: (matrix.os == 'windows-latest' && (matrix.pysmt_solver == 'msat' || matrix.pysmt_solver == 'all'))
-        uses: johnwason/vcpkg-action@v7
-        id: vcpkg
-        with:
-          pkgs: mpir
-          triplet: x64-windows-release
-          token: ${{ github.token }}
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install MPIR
+        if: (matrix.os == 'windows-latest' && (matrix.pysmt_solver == 'msat' || matrix.pysmt_solver == 'all'))
+        run: vcpkg install mpir:x64-windows
 
       - name: Prepare System
         run: |
