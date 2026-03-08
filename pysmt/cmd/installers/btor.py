@@ -12,8 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+from tempfile import NamedTemporaryFile
 
 from pysmt.cmd.installers.base import SolverInstaller
+
+CYTHON_PATCH = '''\
+--- pyboolector.pyx	2025-05-12 14:01:27.528128358 +0200
++++ pyboolector.pyx.patched	2025-05-12 14:07:26.685645023 +0200
+@@ -1274,7 +1274,7 @@
+                 Parameter ``width`` is only required if ``c`` is an integer.
+         """
+         cdef BoolectorConstNode r
+-        if isinstance(c, int) or (sys.version < '3' and isinstance(c, long)):
++        if isinstance(c, int):
+             if c != 0 and c.bit_length() > width:
+                 raise BoolectorException(
+                           "Value of constant {} (bit width {}) exceeds bit "\\
+'''
 
 
 class BtorInstaller(SolverInstaller):
@@ -40,9 +55,32 @@ class BtorInstaller(SolverInstaller):
                                  mirror_link=mirror_link)
 
     def compile(self):
+        # Override default Python library, include, and interpreter
+        # path into Boolector's CMake because CMake can get confused
+        # if multiple interpreters are available, especially python 2
+        # vs python 3.
+        import sysconfig
+        import sys
+        PYTHON_LIBRARY = os.environ.get('PYSMT_PYTHON_LIBDIR')
+        PYTHON_INCLUDE_DIR = sysconfig.get_path("include")
+
+        PYTHON_EXECUTABLE = sys.executable
+        CMAKE_OPTS = ' -DPYTHON_INCLUDE_DIR=' + PYTHON_INCLUDE_DIR
+        CMAKE_OPTS += ' -DPYTHON_EXECUTABLE=' + PYTHON_EXECUTABLE
+        if PYTHON_LIBRARY:
+            CMAKE_OPTS += ' -DPYTHON_LIBRARY=' + PYTHON_LIBRARY
+
         # Unpack
         SolverInstaller.untar(os.path.join(self.base_dir, self.archive_name),
                               self.extract_path)
+
+        # Patching for cython 3.8
+        with NamedTemporaryFile() as f:
+            f.write(CYTHON_PATCH.encode())
+            f.flush()
+            f.seek(0)
+            SolverInstaller.run("patch src/api/python/pyboolector.pyx -i %s" % f.name,
+                                directory=self.extract_path)
 
         # Build lingeling
         SolverInstaller.run("bash ./contrib/setup-lingeling.sh",
@@ -52,22 +90,14 @@ class BtorInstaller(SolverInstaller):
         SolverInstaller.run("bash ./contrib/setup-btor2tools.sh",
                             directory=self.extract_path)
 
-        # Inject Python library and include paths into CMake because Boolector search
-        # system can be fooled in some systems
-        import distutils.sysconfig as sysconfig
-        PYTHON_LIBRARY = sysconfig.get_config_var('LIBDIR')
-        PYTHON_INCLUDE_DIR = sysconfig.get_python_inc()
-        SolverInstaller.run(['sed', '-i',
-                             's|cmake_opts=""|cmake_opts="-DPYTHON_LIBRARY=' + PYTHON_LIBRARY + ' -DPYTHON_INCLUDE_DIR=' + PYTHON_INCLUDE_DIR + '"|g',
-                             './configure.sh'], directory=self.extract_path)
 
         # Build Boolector Solver
         SolverInstaller.run("bash ./configure.sh --python",
-                            directory=self.extract_path)
+                            directory=self.extract_path,
+                            env_variables={"CMAKE_OPTS": CMAKE_OPTS})
 
         SolverInstaller.run("make -j2",
                             directory=os.path.join(self.extract_path, "build"))
-
 
     def move(self):
         libdir = os.path.join(self.extract_path, "build", "lib")

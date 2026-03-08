@@ -15,18 +15,19 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 #
-from six.moves import cStringIO
+from io import StringIO
 
 import pysmt.smtlib.commands as smtcmd
+
 from pysmt.shortcuts import And, Or, Symbol, GT, Real, Not
 from pysmt.typing import REAL
 from pysmt.test import TestCase, main
 from pysmt.smtlib.script import SmtLibScript, SmtLibCommand
-from pysmt.smtlib.script import smtlibscript_from_formula, evaluate_command
+from pysmt.smtlib.script import smtlibscript_from_formula, InterpreterOMT
 from pysmt.smtlib.parser import get_formula_strict, get_formula, SmtLibParser
 from pysmt.solvers.smtlib import SmtLibIgnoreMixin
 from pysmt.logics import QF_UFLIRA
-from pysmt.exceptions import UndefinedLogicError, PysmtValueError
+from pysmt.exceptions import UndefinedLogicError, PysmtValueError, PysmtTypeError
 
 
 
@@ -68,7 +69,7 @@ class TestSmtLibScript(TestCase):
                                    '(declare-sort s1 1)', \
                                    '(declare-const c0 s0)', \
                                    '(declare-const c1 (s1 Int))'])
-        outstream = cStringIO(smtlib_script)
+        outstream = StringIO(smtlib_script)
         script = parser.get_script(outstream)
         script.evaluate(solver=mock)
 
@@ -87,7 +88,7 @@ class TestSmtLibScript(TestCase):
         script = smtlibscript_from_formula(f)
 
         self.assertIsNotNone(script)
-        outstream = cStringIO()
+        outstream = StringIO()
         script.serialize(outstream)
         output = outstream.getvalue()
         self.assertIn("(set-logic ", output)
@@ -97,14 +98,14 @@ class TestSmtLibScript(TestCase):
 
         # Use custom logic (as str)
         script2 = smtlibscript_from_formula(f, logic="BOOL")
-        outstream = cStringIO()
+        outstream = StringIO()
         script2.serialize(outstream)
         output = outstream.getvalue()
         self.assertIn("(set-logic BOOL)", output)
 
         # Use custom logic (as Logic obj)
         script3 = smtlibscript_from_formula(f, logic=QF_UFLIRA)
-        outstream = cStringIO()
+        outstream = StringIO()
         script3.serialize(outstream)
         output = outstream.getvalue()
         self.assertIn("(set-logic QF_UFLIRA)", output)
@@ -117,7 +118,7 @@ class TestSmtLibScript(TestCase):
     def test_get_strict_formula(self):
 
         smtlib_single = """
-(set-logic UF_LIRA)
+(set-logic UFLIRA)
 (declare-fun x () Bool)
 (declare-fun y () Bool)
 (declare-fun r () Real)
@@ -135,15 +136,15 @@ class TestSmtLibScript(TestCase):
         target_one = And(GT(r, Real(0)), x)
         target_two = And(GT(r, Real(0)), x, Not(y))
 
-        stream_in = cStringIO(smtlib_single)
+        stream_in = StringIO(smtlib_single)
         f = get_formula(stream_in)
         self.assertEqual(f, target_one)
 
-        stream_in = cStringIO(smtlib_double)
+        stream_in = StringIO(smtlib_double)
         f = get_formula(stream_in)
         self.assertEqual(f, target_two)
 
-        stream_in = cStringIO(smtlib_double)
+        stream_in = StringIO(smtlib_double)
         with self.assertRaises(PysmtValueError):
             f = get_formula_strict(stream_in)
 
@@ -151,7 +152,7 @@ class TestSmtLibScript(TestCase):
     def test_define_funs_same_args(self):
         # n is defined once as an Int and once as a Real
         smtlib_script = "\n".join(['(define-fun f ((n Int)) Int n)', '(define-fun f ((n Real)) Real n)'])
-        stream = cStringIO(smtlib_script)
+        stream = StringIO(smtlib_script)
         parser = SmtLibParser()
         _ = parser.get_script(stream)
         # No exceptions are thrown
@@ -160,18 +161,50 @@ class TestSmtLibScript(TestCase):
 
     def test_define_funs_arg_and_fun(self):
         smtlib_script = "\n".join(['(define-fun f ((n Int)) Int n)', '(declare-fun n () Real)'])
-        stream = cStringIO(smtlib_script)
+        stream = StringIO(smtlib_script)
         parser = SmtLibParser()
         _ = parser.get_script(stream)
         # No exceptions are thrown
         self.assertTrue(True)
 
+    def test_define_fun_serialize_complex_type(self):
+        smtlib_script = '(define-fun f ((var (_ BitVec 32))) (_ BitVec 32) var)'
+        stream = StringIO(smtlib_script)
+        parser = SmtLibParser()
+        script = parser.get_script(stream)
+        # No exceptions are thrown
+        self.assertEqual(smtlib_script.replace('var', '__var0'), script.commands[0].serialize_to_string())
+
+    def test_twice_fix_real(self):
+        smtlib_script = "\n".join([
+            '(declare-fun r () Real)',
+            '(assert (< (* 1 r) 0))',
+            '(assert (< 2 (* 1 r)))'
+        ])
+        stream = StringIO(smtlib_script)
+        parser = SmtLibParser()
+        _ = parser.get_script(stream)
+        # No exceptions are thrown
+        self.assertTrue(True)
+
+    def test_type_error(self):
+        smtlib_script = "\n".join([
+            "(declare-sort B 0)",
+            "(declare-const e B)",
+            "(declare-const x Bool)",
+            "(assert (= e x))",
+        ])
+        stream = StringIO(smtlib_script)
+        parser = SmtLibParser()
+        with self.assertRaises(PysmtTypeError):
+            _ = parser.get_script(stream)
 
     def test_evaluate_command(self):
         class SmtLibIgnore(SmtLibIgnoreMixin):
             pass
 
         mock = SmtLibIgnore()
+        inter = InterpreterOMT()
         for cmd_name in [ smtcmd.SET_INFO,
                           smtcmd.ASSERT,
                           smtcmd.CHECK_SAT,
@@ -181,14 +214,14 @@ class TestSmtLibScript(TestCase):
                           smtcmd.PUSH,
                           smtcmd.POP]:
 
-            evaluate_command(SmtLibCommand(cmd_name, [None, None]),
+            inter.evaluate(SmtLibCommand(cmd_name, [None, None]),
                              solver=mock)
 
-        evaluate_command(SmtLibCommand(smtcmd.DECLARE_FUN,
+        inter.evaluate(SmtLibCommand(smtcmd.DECLARE_FUN,
                                        [None, None, None]),
                          solver=mock)
 
-        evaluate_command(SmtLibCommand(smtcmd.DEFINE_FUN,
+        inter.evaluate(SmtLibCommand(smtcmd.DEFINE_FUN,
                                        [None, None, None, None]),
                          solver=mock)
 
@@ -224,14 +257,19 @@ class TestSmtLibScript(TestCase):
         # Create a small file that tests all commands of smt-lib 2
         parser = SmtLibParser()
 
+        te = 0
         nie = 0
         for cmd in DEMO_SMTSCRIPT:
             try:
-                next(parser.get_command_generator(cStringIO(cmd)))
+                next(parser.get_command_generator(StringIO(cmd)))
             except NotImplementedError:
                 nie += 1
+            except PysmtTypeError:
+                te += 1
         # There are currently 3 not-implemented commands
         self.assertEqual(nie, 3)
+        # There is currently 1 type error
+        self.assertEqual(te, 1)
 
 DEMO_SMTSCRIPT = [ "(declare-fun a () Bool)",
                    "(declare-fun b () Bool)",
@@ -250,7 +288,8 @@ DEMO_SMTSCRIPT = [ "(declare-fun a () Bool)",
                    "(define-sort E () (D Int))",
                    "(declare-sort F 2)",
                    "(define-sort G (H) (F Int H))",
-                   "(define-fun f ((a Bool)) B a)",
+                   "(declare-fun e () B)",
+                   "(define-fun f ((a Bool)) B e)",
                    "(define-fun g ((a Bool)) B (f a))",
                    "(define-fun h ((a Int)) Int a)",
                    "(declare-const x Bool)",

@@ -62,7 +62,7 @@ else:
     #
     # To avoid code duplication, we tell cython to compile the .py file
     # and load the resulting .so file. Cython does not support this flow,
-    # therfore we need to have a couple of work-arounds.
+    # therefore we need to have a couple of work-arounds.
     #
     # 1. Call to pyximport.install(): Functions in pyximport expect to
     # find a global object called pyxargs. This is created within
@@ -74,13 +74,30 @@ else:
     #
     # 3. load_dynamic will load the module but not extend the globald
     # directory. We rely on the fact that the loading has been already
-    # performed and call the import * explicitely
+    # performed and call the import * explicitly
     #
     # Since the .so is compiled outside of the PYTHON_PATH, there is
     # no ambiguity when importing the parser: the only way to load the
     # cython version is by the so_path that targets .pyxbld .
     #
-    import imp
+    import importlib
+    import sys
+
+    if not hasattr(pyximport, "build_module"):
+        if sys.version_info < (3, 5):
+            # _pyximport3 module requires at least Python 3.5
+            import pyximport._pyximport2 as pyximport
+        else:
+            import pyximport._pyximport3 as pyximport
+
+    if not hasattr(pyximport, "build_module"):
+        import sys
+        if sys.version_info < (3, 5):
+            # _pyximport3 module requires at least Python 3.5
+            import pyximport._pyximport2 as pyximport
+        else:
+            import pyximport._pyximport3 as pyximport
+
     pyx = pyximport.install()
     pyximport.uninstall(*pyx)
     build_dir = os.path.join(os.path.expanduser('~'), '.pyxbld')
@@ -89,7 +106,12 @@ else:
 
     so_path = pyximport.build_module(name, path,
                                      pyxbuild_dir=build_dir)
-    mod = imp.load_dynamic(name, so_path)
+    spec = importlib.util.spec_from_file_location(name, so_path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    mod = sys.modules[name]
+
     assert mod.__file__ == so_path, (mod.__file__, so_path)
     # print(so_path)
     from pysmt.smtlib.parser.parser import *

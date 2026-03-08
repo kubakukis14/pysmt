@@ -26,9 +26,7 @@ except ImportError:
 
 # Keep array models expressed as values instead of Lambdas
 # (see https://github.com/Z3Prover/z3/issues/1769)
-z3.set_param('model_compress', False)
-
-from six.moves import xrange
+z3.set_param('model.compact', False)
 
 
 import pysmt.typing as types
@@ -37,23 +35,27 @@ from pysmt.solvers.solver import (IncrementalTrackingSolver, UnsatCoreSolver,
                                   Model, Converter, SolverOptions)
 from pysmt.solvers.smtlib import SmtLibBasicSolver, SmtLibIgnoreMixin
 from pysmt.solvers.qelim import QuantifierEliminator
+from pysmt.solvers.interpolation import Interpolator
 
 from pysmt.walkers import DagWalker
 from pysmt.exceptions import (SolverReturnedUnknownResultError,
                               SolverNotConfiguredForUnsatCoresError,
                               SolverStatusError,
                               ConvertExpressionError,
-                              UndefinedSymbolError, PysmtValueError)
+                              UndefinedSymbolError, PysmtValueError,
+                              PysmtInfinityError, PysmtInfinitesimalError)
 from pysmt.decorators import clear_pending_pop, catch_conversion_error
-from pysmt.logics import LRA, LIA, QF_UFLRA, PYSMT_LOGICS
+from pysmt.logics import LRA, LIA, QF_UFLRA, QF_UFLIA, PYSMT_LOGICS
 from pysmt.oracles import get_logic
-from pysmt.constants import Fraction, Numeral, is_pysmt_integer, to_python_integer
+from pysmt.constants import Fraction, Numeral, is_pysmt_integer
 
 
 # patch z3api
 z3.is_ite = lambda x: z3.is_app_of(x, z3.Z3_OP_ITE)
 z3.is_function = lambda x: z3.is_app_of(x, z3.Z3_OP_UNINTERPRETED)
 z3.is_array_store = lambda x: z3.is_app_of(x, z3.Z3_OP_STORE)
+z3.is_infinite = lambda x: z3.is_const(x) and str(x.decl()) == "oo"
+z3.is_epsilon = lambda x: z3.is_const(x) and str(x.decl()) == "epsilon"
 z3.get_payload = lambda node,i : z3.Z3_get_decl_int_parameter(node.ctx.ref(),
                                                               node.decl().ast, i)
 
@@ -142,16 +144,22 @@ class Z3Solver(IncrementalTrackingSolver, UnsatCoreSolver,
     LOGICS = PYSMT_LOGICS - set(x for x in PYSMT_LOGICS if x.theory.strings)
     OptionsClass = Z3Options
 
+    SOLVERFOR_LOGIC_NAMES=['AUFLIA', 'ALIA', 'AUFLIRA', 'AUFNIRA', 'LRA', 'LIA', 'NIA',
+                           'NRA', 'QF_ABV', 'QF_AUFBV', 'QF_AUFLIA', 'QF_ALIA', 'QF_AX',
+                           'QF_BV', 'BV', 'UFBV', 'QF_IDL', 'QF_LIA', 'QF_LRA', 'QF_NIA',
+                           'QF_NRA', 'QF_RDL', 'QF_UF', 'UF', 'QF_UFBV', 'QF_UFIDL',
+                           'QF_UFLIA', 'QF_UFLRA', 'QF_UFNRA', 'QF_UFNIA', 'UFLRA', 'UFNIA']
+
     def __init__(self, environment, logic, **options):
         IncrementalTrackingSolver.__init__(self,
                                            environment=environment,
                                            logic=logic,
                                            **options)
-        try:
+        # LBYL to avoid a possible segmentation fault caused by z3.SolverFor
+        # See issue #465 (https://github.com/pysmt/pysmt/issues/465)
+        if str(logic) in Z3Solver.SOLVERFOR_LOGIC_NAMES:
             self.z3 = z3.SolverFor(str(logic))
-        except z3.Z3Exception:
-            self.z3 = z3.Solver()
-        except z3.z3types.Z3Exception:
+        else:
             self.z3 = z3.Solver()
         self.options(self)
         self.declarations = set()
@@ -260,12 +268,12 @@ class Z3Solver(IncrementalTrackingSolver, UnsatCoreSolver,
 
     @clear_pending_pop
     def _push(self, levels=1):
-        for _ in xrange(levels):
+        for _ in range(levels):
             self.z3.push()
 
     @clear_pending_pop
     def _pop(self, levels=1):
-        for _ in xrange(levels):
+        for _ in range(levels):
             self.z3.pop()
 
     def print_model(self, name_filter=None):
@@ -530,7 +538,7 @@ class Z3Converter(Converter, DagWalker):
                     interp = model[interp_decl]
                     default = self.back(interp.else_value(), model=model)
                     assign = {}
-                    for i in xrange(interp.num_entries()):
+                    for i in range(interp.num_entries()):
                         e = interp.entry(i)
                         assert e.num_args() == 1
                         idx = self.back(e.arg_value(0), model=model)
@@ -541,6 +549,10 @@ class Z3Converter(Converter, DagWalker):
             elif z3.is_algebraic_value(expr):
                 # Algebraic value
                 return self.mgr._Algebraic(Numeral(expr))
+            elif z3.is_infinite(expr):
+                raise PysmtInfinityError("Found an expression representing an infinite value")
+            elif z3.is_epsilon(expr):
+                raise PysmtInfinitesimalError("Found an expression representing an infinitesimal value")
             else:
                 # it must be a symbol
                 try:
@@ -581,7 +593,7 @@ class Z3Converter(Converter, DagWalker):
 
     def back_via_smtlib(self, expr):
         """Back convert a Z3 Expression by translation to SMT-LIB."""
-        from six import StringIO
+        from io import StringIO
         from pysmt.smtlib.parser import SmtLibZ3Parser
         parser = SmtLibZ3Parser(self.env)
 
@@ -655,6 +667,14 @@ class Z3Converter(Converter, DagWalker):
             z3.Z3_dec_ref(self.ctx.ref(), or2)
             return z3term
         z3term = z3.Z3_mk_ite(self.ctx.ref(), i, t, e)
+        z3.Z3_inc_ref(self.ctx.ref(), z3term)
+        return z3term
+
+    def walk_algebraic_constant(self, formula, **kwargs):
+        rep = str(formula.constant_value())
+        z3term = z3.Z3_mk_numeral(self.ctx.ref(),
+                                  rep,
+                                  self.z3RealSort.ast)
         z3.Z3_inc_ref(self.ctx.ref(), z3term)
         return z3term
 
@@ -821,7 +841,7 @@ class Z3Converter(Converter, DagWalker):
         z3term = z3.Z3_mk_const_array(self.ctx.ref(), arraysort, args[0])
         z3.Z3_inc_ref(self.ctx.ref(), z3term)
 
-        for i in xrange(1, len(args), 2):
+        for i in range(1, len(args), 2):
             c = args[i]
             z3term = self.walk_array_store(None, (z3term, c, args[i+1]))
             z3.Z3_inc_ref(self.ctx.ref(), z3term)
@@ -959,6 +979,54 @@ class Z3QuantifierEliminator(QuantifierEliminator):
                 "elimination as the attribute 'expression' of this " \
                 "exception object" % str(res)),
                                           expression=res)
+
+        return pysmt_res
+
+    def _exit(self):
+        pass
+
+
+class Z3Interpolator(Interpolator):
+
+    LOGICS = [QF_UFLIA, QF_UFLRA]
+
+    def __init__(self, environment, logic=None):
+        Interpolator.__init__(self)
+        self.environment = environment
+        self.logic = logic
+        self.converter = Z3Converter(environment, z3_ctx=z3._get_ctx(None))
+
+    def _check_logic(self, formulas):
+        for f in formulas:
+            logic = get_logic(f, self.environment)
+            ok = any(logic <= l for l in self.LOGICS)
+            if not ok:
+                raise PysmtValueError("Logic not supported by Z3 interpolation."
+                                      "(detected logic is: %s)" % str(logic))
+
+    def binary_interpolant(self, a, b):
+        self._check_logic([a, b])
+
+        a = self.converter.convert(a)
+        b = self.converter.convert(b)
+
+        try:
+            itp = z3.binary_interpolant(a, b)
+            pysmt_res = self.converter.back(itp)
+        except z3.ModelRef:
+            pysmt_res = None
+
+        return pysmt_res
+
+    def sequence_interpolant(self, formulas):
+        self._check_logic(formulas)
+
+        zf = [self.converter.convert(f) for f in formulas]
+        try:
+            itp = z3.sequence_interpolant(zf)
+            pysmt_res = [self.converter.back(f) for f in itp]
+        except z3.ModelRef:
+            pysmt_res = None
 
         return pysmt_res
 

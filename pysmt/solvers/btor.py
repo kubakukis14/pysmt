@@ -15,17 +15,34 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 #
+from enum import Enum
+import inspect
 from math import log, ceil
 
 from pysmt.exceptions import SolverAPINotFound
 
 try:
     import pyboolector
+
+    # Fixing interface for cython 3.1+
+    #
+    # Cython 3.1 changed the way enums are handled: the enum values are no
+    # longer added to the global namespace, while the documentation of btor
+    # relied on the old behavior of cython, Here, we first collect all the nums
+    # in the module and then we add their enumerands to the pyboolector module,
+    # making it work on either cython 3.0 or 3.1.
+    enums = []
+    for x in pyboolector.__dict__.values():
+        if inspect.isclass(x) and issubclass(x, Enum):
+            enums.append(x)
+    for x in enums:
+        pyboolector.__dict__.update(x.__members__)
+
 except ImportError:
     raise SolverAPINotFound
 
 
-from pysmt.solvers.solver import (IncrementalTrackingSolver,
+from pysmt.solvers.solver import (IncrementalTrackingSolver, UnsatCoreSolver,
                                   Converter, SolverOptions)
 from pysmt.solvers.smtlib import SmtLibBasicSolver, SmtLibIgnoreMixin
 from pysmt.solvers.eager import EagerModel
@@ -33,7 +50,7 @@ from pysmt.walkers import DagWalker
 from pysmt.exceptions import (SolverReturnedUnknownResultError,
                               ConvertExpressionError, PysmtValueError)
 from pysmt.decorators import clear_pending_pop, catch_conversion_error
-from pysmt.logics import QF_BV, QF_UFBV, QF_ABV, QF_AUFBV, QF_AX
+from pysmt.logics import QF_BV, QF_UFBV, QF_ABV, QF_AUFBV, QF_AX, ARRAYS_CONST_LOGICS
 from pysmt.constants import to_python_integer
 
 
@@ -63,12 +80,13 @@ class BoolectorOptions(SolverOptions):
                                  pyboolector.BTOR_OPT_REWRITE_LEVEL,
                                  pyboolector.BTOR_OPT_SKELETON_PREPROC,
                                  pyboolector.BTOR_OPT_ACKERMANN,
-                                 pyboolector.BTOR_OPT_BETA_REDUCE_ALL,
+                                 pyboolector.BTOR_OPT_BETA_REDUCE,
                                  pyboolector.BTOR_OPT_ELIMINATE_SLICES,
                                  pyboolector.BTOR_OPT_VAR_SUBST,
                                  pyboolector.BTOR_OPT_UCOPT,
                                  pyboolector.BTOR_OPT_MERGE_LAMBDAS,
                                  pyboolector.BTOR_OPT_EXTRACT_LAMBDAS,
+                                 pyboolector.BTOR_OPT_NORMALIZE,
                                  pyboolector.BTOR_OPT_NORMALIZE_ADD,
                                  pyboolector.BTOR_OPT_FUN_PREPROP,
                                  pyboolector.BTOR_OPT_FUN_PRESLS,
@@ -78,6 +96,7 @@ class BoolectorOptions(SolverOptions):
                                  pyboolector.BTOR_OPT_FUN_JUST_HEURISTIC,
                                  pyboolector.BTOR_OPT_FUN_LAZY_SYNTHESIZE,
                                  pyboolector.BTOR_OPT_FUN_EAGER_LEMMAS,
+                                 pyboolector.BTOR_OPT_FUN_STORE_LAMBDAS,
                                  pyboolector.BTOR_OPT_SLS_NFLIPS,
                                  pyboolector.BTOR_OPT_SLS_STRATEGY,
                                  pyboolector.BTOR_OPT_SLS_JUST,
@@ -95,6 +114,7 @@ class BoolectorOptions(SolverOptions):
                                  pyboolector.BTOR_OPT_SLS_MOVE_INC_MOVE_TEST,
                                  pyboolector.BTOR_OPT_SLS_USE_RESTARTS,
                                  pyboolector.BTOR_OPT_SLS_USE_BANDIT,
+                                 pyboolector.BTOR_OPT_PROP_NPROPS,
                                  pyboolector.BTOR_OPT_PROP_USE_RESTARTS,
                                  pyboolector.BTOR_OPT_PROP_USE_BANDIT,
                                  pyboolector.BTOR_OPT_PROP_PATH_SEL,
@@ -111,28 +131,46 @@ class BoolectorOptions(SolverOptions):
                                  pyboolector.BTOR_OPT_PROP_NO_MOVE_ON_CONFLICT,
                                  pyboolector.BTOR_OPT_AIGPROP_USE_RESTARTS,
                                  pyboolector.BTOR_OPT_AIGPROP_USE_BANDIT,
+                                 pyboolector.BTOR_OPT_QUANT_SYNTH,
+                                 pyboolector.BTOR_OPT_QUANT_DUAL_SOLVER,
+                                 pyboolector.BTOR_OPT_QUANT_SYNTH_LIMIT,
+                                 pyboolector.BTOR_OPT_QUANT_SYNTH_QI,
+                                 pyboolector.BTOR_OPT_QUANT_DER,
+                                 pyboolector.BTOR_OPT_QUANT_CER,
+                                 pyboolector.BTOR_OPT_QUANT_MINISCOPE,
                                  pyboolector.BTOR_OPT_SORT_EXP,
                                  pyboolector.BTOR_OPT_SORT_AIG,
                                  pyboolector.BTOR_OPT_SORT_AIGVEC,
                                  pyboolector.BTOR_OPT_AUTO_CLEANUP_INTERNAL,
                                  pyboolector.BTOR_OPT_SIMPLIFY_CONSTRAINTS,
-                                 pyboolector.BTOR_OPT_CHK_FAILED_ASSUMPTIONS]
-
+                                 pyboolector.BTOR_OPT_CHK_FAILED_ASSUMPTIONS,
+                                 pyboolector.BTOR_OPT_CHK_MODEL,
+                                 pyboolector.BTOR_OPT_CHK_UNCONSTRAINED,
+                                 pyboolector.BTOR_OPT_PARSE_INTERACTIVE,
+                                 pyboolector.BTOR_OPT_SAT_ENGINE_LGL_FORK,
+                                 pyboolector.BTOR_OPT_SAT_ENGINE_CADICAL_FREEZE,
+                                 pyboolector.BTOR_OPT_SAT_ENGINE_N_THREADS,
+                                 pyboolector.BTOR_OPT_SIMP_NORMAMLIZE_ADDERS,
+                                 pyboolector.BTOR_OPT_DECLSORT_BV_WIDTH,
+                                 pyboolector.BTOR_OPT_QUANT_SYNTH_ITE_COMPLETE,
+                                 pyboolector.BTOR_OPT_QUANT_FIXSYNTH,
+                                 pyboolector.BTOR_OPT_RW_ZERO_LOWER_SLICE,
+                                 pyboolector.BTOR_OPT_NONDESTR_SUBST]
 
     def _set_option(self, btor, name, value):
-        available_options = {pyboolector.BoolectorOpt(btor, io).lng : io
+        available_options = {pyboolector.BoolectorOpt(btor, io).lng: io
                              for io in self.internal_options}
         try:
             btor.Set_opt(available_options[name], value)
         except TypeError:
-            raise PysmtValueError("Error setting the option '%s=%s'" \
-                                  % (name,value))
+            raise PysmtValueError("Error setting the option '%s=%s'"
+                                  % (name, value))
         except pyboolector.BoolectorException:
-            raise PysmtValueError("Error setting the option '%s=%s'" \
-                                  % (name,value))
+            raise PysmtValueError("Error setting the option '%s=%s'"
+                                  % (name, value))
         except KeyError:
             raise PysmtValueError("Unable to set non-existing option '%s'. "
-                                  "The accepted options options are: %s" \
+                                  "The accepted options options are: %s"
                                   % (name, ", ".join(pyboolector.BoolectorOpt(btor, io).lng
                                                      for io in self.internal_options)))
 
@@ -144,17 +182,19 @@ class BoolectorOptions(SolverOptions):
         if self.incrementality:
             self._set_option(solver.btor, "incremental", 1)
 
-        for k,v in self.solver_options.items():
+        for k, v in self.solver_options.items():
             # Note: Options values in btor are mostly integers
             self._set_option(solver.btor, str(k), v)
 
 # EOC BoolectorOptions
 
 
-class BoolectorSolver(IncrementalTrackingSolver,
+class BoolectorSolver(IncrementalTrackingSolver, UnsatCoreSolver,
                       SmtLibBasicSolver, SmtLibIgnoreMixin):
 
-    LOGICS = [QF_BV, QF_UFBV, QF_ABV, QF_AUFBV, QF_AX]
+    LOGICS = [QF_BV, QF_UFBV, QF_ABV, QF_AUFBV, QF_AX] + \
+        list(filter(lambda l: l.name in {
+             'QF_ABV*', 'QF_AUFBV*', 'QF_AX*'}, ARRAYS_CONST_LOGICS))
     OptionsClass = BoolectorOptions
 
     def __init__(self, environment, logic, **options):
@@ -167,6 +207,7 @@ class BoolectorSolver(IncrementalTrackingSolver,
         self.converter = BTORConverter(environment, self.btor)
         self.mgr = environment.formula_manager
         self.declarations = {}
+        self._named_assertions = {}
         return
 
 # EOC BoolectorOptions
@@ -188,7 +229,15 @@ class BoolectorSolver(IncrementalTrackingSolver,
     def _add_assertion(self, formula, named=None):
         self._assert_is_boolean(formula)
         term = self.converter.convert(formula)
-        self.btor.Assert(term)
+        if self.options.unsat_cores_mode is None:
+            self.btor.Assert(term)
+        else:
+            if self.options.unsat_cores_mode == "named" and \
+               named is not None:
+                self._named_assertions[formula] = named
+            # need to use assumptions to get unsat cores
+            self.btor.Assume(term)
+        return formula
 
     def get_model(self):
         assignment = {}
@@ -203,6 +252,13 @@ class BoolectorSolver(IncrementalTrackingSolver,
             self.btor.Assume(*btor_assumptions)
 
         res = self.btor.Sat()
+
+        # need to re-add assumptions if in unsat-core mode
+        # which uses Assume instead of Assert
+        if self.options.unsat_cores_mode is not None:
+            for a in self._assertion_stack:
+                self._add_assertion(a)
+
         if res == self.btor.SAT:
             return True
         elif res == self.btor.UNSAT:
@@ -211,7 +267,44 @@ class BoolectorSolver(IncrementalTrackingSolver,
             raise SolverReturnedUnknownResultError
 
     def get_unsat_core(self):
-        raise NotImplementedError
+        """After a call to solve() yielding UNSAT, returns the unsat core as a
+        set of formulae"""
+        self._check_unsat_core_config()
+
+        if self.options.unsat_cores_mode == 'all':
+            unsat_core = set()
+            # relies on this assertion stack being ordered
+            assert isinstance(self._assertion_stack, list)
+            btor_assertions = [self.converter.convert(
+                a) for a in self._assertion_stack]
+            in_unsat_core = self.btor.Failed(*btor_assertions)
+            for a, in_core in zip(self._assertion_stack, in_unsat_core):
+                if in_core:
+                    unsat_core.add(a)
+            return unsat_core
+        else:
+            return self.get_named_unsat_core().values()
+
+    def get_named_unsat_core(self):
+        """After a call to solve() yielding UNSAT, returns the unsat core as a
+        dict of names to formulae"""
+        self._check_unsat_core_config()
+
+        if self.options.unsat_cores_mode == "named":
+            unsat_core = {}
+            # relies on this assertion stack being ordered
+            assert isinstance(self._assertion_stack, list)
+            btor_named_assertions = [self.converter.convert(
+                a) for a in self._named_assertions.keys()]
+            in_unsat_core = self.btor.Failed(*btor_named_assertions)
+            for a, in_core in zip(self._assertion_stack, in_unsat_core):
+                if in_core:
+                    name = self._named_assertions[a]
+                    unsat_core[name] = a
+            return unsat_core
+        else:
+            return dict(("_a%d" % i, f)
+                        for i, f in enumerate(self.get_unsat_core()))
 
     @clear_pending_pop
     def _push(self, levels=1):
@@ -230,22 +323,46 @@ class BoolectorSolver(IncrementalTrackingSolver,
         self._assert_no_function_type(item)
         itype = item.get_type()
         titem = self.converter.convert(item)
+
+        def _back_bv_func(width):
+            def _back_bv(assignment):
+                return self.mgr.BV(assignment, width)
+            return _back_bv
+
+        def _back_bool(assignment):
+            return self.mgr.Bool(bool(int(assignment)))
+
         if itype.is_bv_type():
-            return self.mgr.BV(titem.assignment, item.bv_width())
+            return _back_bv_func(item.bv_width())(titem.assignment)
         elif itype.is_bool_type():
-            return self.mgr.Bool(bool(int(titem.assignment)))
+            return _back_bool(titem.assignment)
         else:
             assert itype.is_array_type()
-            assert itype.index_type.is_bv_type()
-            assert itype.elem_type.is_bv_type()
+            assert itype.index_type.is_bv_type() or itype.index_type.is_bool_type()
+            assert itype.elem_type.is_bv_type() or itype.elem_type.is_bool_type()
 
-            idx_width = itype.index_type.width
-            val_width = itype.elem_type.width
+            if itype.index_type.is_bv_type():
+                _back_index = _back_bv_func(itype.index_type.width)
+            else:
+                _back_index = _back_bool
+
+            if itype.elem_type.is_bv_type():
+                _back_elem = _back_bv_func(itype.elem_type.width)
+                default_elem = self.mgr.BV(0, itype.elem_type.width)
+            else:
+                _back_elem = _back_bool
+                default_elem = self.mgr.Bool(False)
+
             assign = {}
             for (idx, val) in titem.assignment:
-                assign[self.mgr.BV(idx, idx_width)] = self.mgr.BV(val, val_width)
+                elem_value = _back_elem(val)
+                if idx == '*':
+                    default_elem = elem_value
+                else:
+                    assign[_back_index(idx)] = elem_value
+
             return self.mgr.Array(itype.index_type,
-                                  self.mgr.BV(0, val_width), assign)
+                                  default_elem, assign)
 
     def _exit(self):
         del self.btor
@@ -300,7 +417,8 @@ class BTORConverter(Converter, DagWalker):
     def walk_symbol(self, formula, **kwargs):
         symbol_type = formula.symbol_type()
         if symbol_type.is_bool_type():
-            res = self._btor.Var(self._btor.BitVecSort(1), formula.symbol_name())
+            res = self._btor.Var(self._btor.BitVecSort(1),
+                                 formula.symbol_name())
         elif symbol_type.is_real_type():
             raise ConvertExpressionError
         elif symbol_type.is_int_type():
@@ -309,16 +427,19 @@ class BTORConverter(Converter, DagWalker):
             # BTOR supports only Arrays of Type (BV, BV)
             index_type = symbol_type.index_type
             elem_type = symbol_type.elem_type
-            if not (index_type.is_bv_type() and elem_type.is_bv_type()):
-                raise ConvertExpressionError("BTOR supports only Array(BV,BV). "\
+            if not (index_type.is_bv_type() or index_type.is_bool_type()) or not (elem_type.is_bv_type() or elem_type.is_bool_type()):
+                raise ConvertExpressionError("BTOR supports only Array(BV,BV). "
                                              "Type '%s' was given." % str(symbol_type))
-            res = self._btor.Array(self._btor.ArraySort(self._btor.BitVecSort(index_type.width),
-                                                        self._btor.BitVecSort(elem_type.width)),
+            index_width = index_type.width if index_type.is_bv_type() else 1
+            elem_width = elem_type.width if elem_type.is_bv_type() else 1
+            res = self._btor.Array(self._btor.ArraySort(self._btor.BitVecSort(index_width),
+                                                        self._btor.BitVecSort(elem_width)),
                                    formula.symbol_name())
-        else:
-            assert symbol_type.is_bv_type()
+        elif symbol_type.is_bv_type():
             res = self._btor.Var(self._btor.BitVecSort(formula.bv_width()),
                                  formula.symbol_name())
+        else:
+            raise SolverReturnedUnknownResultError("Unknown type for BTOR")
         self.declared_vars[formula] = res
         return res
 
@@ -392,56 +513,18 @@ class BTORConverter(Converter, DagWalker):
         return self._btor.Urem(args[0], args[1])
 
     def walk_bv_lshl(self, formula, args, **kwargs):
-        # LHS width must be a power of 2
-        # Since this is a Logical Shift, we can Zero-Extend LHS
-        # if this is not the case
-        lhs, rhs = self._extend_bv_pow2(args[0]), args[1]
-        lhs_w, rhs_w = lhs.width, rhs.width
-
-        # Boolector requires that witdh(rhs) = log2(width(lhs))
-        target_w = int(ceil(log(lhs_w, 2)))
-        if rhs_w == target_w:
-            return lhs << args[1]
-        else:
-            # If (rhs > max) Then 0 Else Rescale
-            max_value = 2**target_w-1
-            max_big = self._btor.Const(max_value, rhs_w)
-            cond = self._btor.Ugt(rhs, max_big)
-            zero = self._btor.Const(0, lhs_w)
-            rescaled = self._btor.Slice(rhs, target_w-1, 0)
-            return self._btor.Cond(cond,
-                                   zero,
-                                   self._btor.Sll(lhs, rescaled))
+        return self._btor.Sll(args[0], args[1])
 
     def walk_bv_lshr(self, formula, args, **kwargs):
-        # LHS width must be a power of 2
-        # Since this is a Logical Shift, we can Zero-Extend LHS
-        # if this is not the case
-        lhs, rhs = self._extend_bv_pow2(args[0]), args[1]
-        lhs_w, rhs_w = lhs.width, rhs.width
-        target_w = int(ceil(log(lhs_w, 2)))
-
-        # Boolector requires that width(rhs) = log2(width(lhs))
-        if rhs_w == target_w:
-            return lhs >> rhs
-        else:
-            # If (rhs > max) Then 0 Else Rescale
-            max_value = 2**target_w-1
-            max_big = self._btor.Const(max_value, rhs_w)
-            cond = self._btor.Ugt(rhs, max_big)
-            zero = self._btor.Const(0, lhs_w)
-            rescaled = self._btor.Slice(rhs, target_w-1, 0)
-            return self._btor.Cond(cond,
-                                   zero,
-                                   self._btor.Srl(lhs, rescaled))
+        return self._btor.Srl(args[0], args[1])
 
     def walk_bv_rol(self, formula, args, **kwargs):
         return self._btor.Rol(args[0],
-                             formula.bv_rotation_step())
+                              formula.bv_rotation_step())
 
     def walk_bv_ror(self, formula, args, **kwargs):
         return self._btor.Ror(args[0],
-                             formula.bv_rotation_step())
+                              formula.bv_rotation_step())
 
     def walk_bv_zext(self, formula, args, **kwargs):
         return self._btor.Uext(args[0], formula.bv_extend_step())
@@ -464,27 +547,8 @@ class BTORConverter(Converter, DagWalker):
     def walk_bv_srem(self, formula, args, **kwargs):
         return self._btor.Srem(args[0], args[1])
 
-    def walk_bv_ashr (self, formula, args, **kwargs):
-        # LHS width must be a power of 2
-        # Since this is an Arithmetic Shift, we need to Sign-Extend LHS
-        # if this is not the case
-        lhs, rhs = self._extend_bv_pow2(args[0], signed=True), args[1]
-        lhs_w, rhs_w = lhs.width, rhs.width
-
-        # Boolector requires that witdh(rhs) = log2(width(lhs))
-        target_w = int(ceil(log(lhs_w, 2)))
-        if rhs_w == target_w:
-            return self._btor.Sra(lhs, rhs)
-        else:
-            # IF (rhs <= max) Then Rescale Else Max
-            max_value = 2**target_w-1
-            max_big = self._btor.Const(max_value, rhs_w)
-            cond = self._btor.Ulte(rhs, max_big)
-            max_small = self._btor.Const(max_value, target_w)
-            rescaled = self._btor.Slice(rhs, target_w-1, 0)
-            return self._btor.Sra(lhs, self._btor.Cond(cond,
-                                                       rescaled,
-                                                       max_small))
+    def walk_bv_ashr(self, formula, args, **kwargs):
+        return self._btor.Sra(args[0], args[1])
 
     def walk_array_store(self, formula, args, **kwargs):
         return self._btor.Write(args[0], args[1], args[2])
@@ -493,7 +557,14 @@ class BTORConverter(Converter, DagWalker):
         return self._btor.Read(args[0], args[1])
 
     def walk_array_value(self, formula, args, **kwargs):
-        raise ConvertExpressionError("btor does not support constant arrays")
+        arr_type = self.env.stc.get_type(formula)
+        arr_sort = self._type_to_btor(arr_type)
+        term = self._btor.ConstArray(arr_sort, args[0])
+
+        for i in range(1, len(args), 2):
+            term = self.walk_array_store(None, (term, args[i], args[i+1]))
+
+        return term
 
     def _type_to_btor(self, tp):
         if tp.is_bool_type():
@@ -505,9 +576,10 @@ class BTORConverter(Converter, DagWalker):
         elif tp.is_bv_type():
             return self._btor.BitVecSort(tp.width)
         elif tp.is_array_type():
-            raise ConvertExpressionError("Unsupported Array Type")
+            return self._btor.ArraySort(self._type_to_btor(tp.index_type),
+                                        self._type_to_btor(tp.elem_type))
         else:
-            assert tp.is_function_type() , "Unsupported type '%s'" % tp
+            assert tp.is_function_type(), "Unsupported type '%s'" % tp
             stps = [self._type_to_btor(x) for x in tp.param_types]
             rtp = self._type_to_btor(tp.return_type)
             return self._btor.FunSort(stps, rtp)

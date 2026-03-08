@@ -17,14 +17,14 @@
 #
 
 from pysmt.test import TestCase, main
-from pysmt.test import skipIfSolverNotAvailable
+from pysmt.test import skipIfSolverNotAvailable, skipIfNoSolverForLogic
 
 from pysmt.oracles import get_logic
 from pysmt.shortcuts import FreshSymbol, Times, Equals, Div, Real, Int, Pow
-from pysmt.shortcuts import Solver, is_sat
+from pysmt.shortcuts import Solver, Symbol, And, Not, is_sat
 from pysmt.typing import REAL, INT
 from pysmt.exceptions import (ConvertExpressionError,
-                              NonLinearError,
+                              NonLinearError, InternalSolverError,
                               SolverReturnedUnknownResultError)
 from pysmt.logics import QF_NRA
 from pysmt.constants import Fraction
@@ -55,8 +55,15 @@ class TestNonLinear(TestCase):
             model = s.get_model()
             xval = model[x]
             self.assertTrue(xval.is_algebraic_constant())
-            approx = Fraction(-3109888511975, 2199023255552)
-            self.assertEqual(xval.algebraic_approx_value(), approx)
+            # There are two solutions, that only differ by sign
+            # we take the positive one
+            x_approx_val = abs(xval.algebraic_approx_value())
+            approx = Fraction(3109888511975, 2199023255552)
+            # We only get an approximation of the actual value.
+            # We check that the error of the approximation is within
+            # the precision (default is 10 digits)
+            err = abs(x_approx_val - approx)
+            self.assertTrue(err < 0.00000000001, err)
 
     def test_oracle(self):
         x = FreshSymbol(REAL)
@@ -69,11 +76,14 @@ class TestNonLinear(TestCase):
         f = Equals(Times(x, x), Real(2))
         for sname in self.env.factory.all_solvers():
             with Solver(name=sname) as s:
-                if sname in  ["bdd", "picosat", "btor"]:
+                if sname in ["bdd", "picosat", "btor"]:
                     with self.assertRaises(ConvertExpressionError):
                         s.is_sat(f)
-                elif sname in ["yices", "cvc4", "msat"]:
+                elif sname in ["yices", "cvc4", "msat", "optimsat"]:
                     with self.assertRaises(NonLinearError):
+                        s.is_sat(f)
+                elif sname in ["cvc5"]:
+                    with self.assertRaises(InternalSolverError):
                         s.is_sat(f)
                 else:
                     res = s.is_sat(f)
@@ -116,6 +126,17 @@ class TestNonLinear(TestCase):
             self.assertTrue(is_sat(f))
         except SolverReturnedUnknownResultError:
             pass
+
+    @skipIfNoSolverForLogic(QF_NRA)
+    def test_div_by_0(self):
+        varA = Symbol('A', REAL)
+        varB = Symbol('B', REAL)
+
+        f = And(Equals(varA, varB),
+                Not(Equals(Div(varA, Real(0)), Div(varB, Real(0)))))
+
+        self.assertUnsat(f)
+
 
 if __name__ == "__main__":
     main()

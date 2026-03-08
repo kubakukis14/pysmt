@@ -233,6 +233,31 @@ def Ite(iff, left, right):
     return get_env().formula_manager.Ite(iff, left, right)
 
 
+def Abs(formula):
+    r"""Returns the absolute value of the formula.
+    
+    This is implemented as If(formula > 0, formula, -formula).
+    Works for both integer and real values.
+    
+    :param formula: The formula to compute the absolute value of
+    :returns: The absolute value of the formula
+    :raises: ValueError if the formula type is not integer or real
+    """
+    # Get the type of the formula to determine the appropriate zero value
+    formula_type = get_type(formula)
+    
+    # Create a zero value of the same type as the formula
+    if formula_type == types.INT:
+        zero = Int(0)
+    elif formula_type == types.REAL:
+        zero = Real(0)
+    else:
+        # Raise an error for unsupported types
+        raise ValueError(f"Abs function only supports integer and real types, got {formula_type}")
+    
+    return Ite(GT(formula, zero), formula, Minus(zero, formula))
+
+
 def Symbol(name, typename=types.BOOL):
     """Returns a symbol with the given name and type.
 
@@ -439,26 +464,26 @@ def BVNot(formula):
     return get_env().formula_manager.BVNot(formula)
 
 
-def BVAnd(left, right):
-    """Returns the Bit-wise AND of two bitvectors of the same size.
+def BVAnd(*args):
+    """Returns the Bit-wise AND of bitvectors of the same size.
+    If more than 2 arguments are passed, a left-associative formula is generated.
 
-    :param left: Specify the left bitvector
-    :param right: Specify the right bitvector
-    :returns: The bit-wise AND of left and right
+    :param *args: Specify the bitvectors
+    :returns: The bit-wise AND of the bitvectors using left association
     :rtype: FNode
     """
-    return get_env().formula_manager.BVAnd(left, right)
+    return get_env().formula_manager.BVAnd(*args)
 
 
-def BVOr(left, right):
-    """Returns the Bit-wise OR of two bitvectors of the same size.
+def BVOr(*args):
+    """Returns the Bit-wise OR of bitvectors of the same size.
+    If more than 2 arguments are passed, a left-associative formula is generated.
 
-    :param left: Specify the left bitvector
-    :param right: Specify the right bitvector
-    :returns: The bit-wise OR of left and right
+    :param *args: Specify the bitvectors
+    :returns: The bit-wise OR of the bitvectors using left association
     :rtype: FNode
     """
-    return get_env().formula_manager.BVOr(left, right)
+    return get_env().formula_manager.BVOr(*args)
 
 
 def BVXor(left, right):
@@ -472,15 +497,14 @@ def BVXor(left, right):
     return get_env().formula_manager.BVXor(left, right)
 
 
-def BVConcat(left, right):
+def BVConcat(*args):
     """Returns the Concatenation of the two BVs
 
-    :param left: Specify the left bitvector
-    :param right: Specify the right bitvector
-    :returns: The concatenation of the two BVs
+    :param args: Specify the bitvectors to concatenate
+    :returns: The concatenation of the given BVs
     :rtype: FNode
     """
-    return get_env().formula_manager.BVConcat(left, right)
+    return get_env().formula_manager.BVConcat(*args)
 
 
 def BVExtract(formula, start=0, end=None):
@@ -548,16 +572,15 @@ def BVNeg(formula):
     """
     return get_env().formula_manager.BVNeg(formula)
 
+def BVAdd(*args):
+    """Returns the sum of BV.
+    If more than 2 arguments are passed, a left-associative formula is generated.
 
-def BVAdd(left, right):
-    """Returns the sum of two BV.
-
-    :param left: Specify the left bitvector
-    :param right: Specify the right bitvector
-    :returns: The sum of the two BVs.
+    :param *args: Specify the bitvectors
+    :returns: The sum of the bitvectors using left association.
     :rtype: FNode
     """
-    return get_env().formula_manager.BVAdd(left, right)
+    return get_env().formula_manager.BVAdd(*args)
 
 
 def BVSub(left, right):
@@ -571,15 +594,15 @@ def BVSub(left, right):
     return get_env().formula_manager.BVSub(left, right)
 
 
-def BVMul(left, right):
-    """Returns the product of two BV.
+def BVMul(*args):
+    """Returns the product of BV.
+    If more than 2 arguments are passed, a left-associative formula is generated.
 
-    :param left: Specify the left bitvector
-    :param right: Specify the right bitvector
-    :returns: The product of the two BV
+    :param *args: Specify the bitvectors
+    :returns: The product of the the bitvectors using left association
     :rtype: FNode
     """
-    return get_env().formula_manager.BVMul(left, right)
+    return get_env().formula_manager.BVMul(*args)
 
 
 def BVUDiv(left, right):
@@ -911,7 +934,7 @@ def Solver(name=None, logic=None, **kwargs):
                                     logic=logic,
                                     **kwargs)
 
-def UnsatCoreSolver(name=None, logic=None, unsat_cores_mode="all"):
+def UnsatCoreSolver(name=None, logic=None, unsat_cores_mode="all", **kwargs):
     """Returns a solver supporting unsat core extraction.
 
     :param name: Specify the name of the solver
@@ -922,7 +945,8 @@ def UnsatCoreSolver(name=None, logic=None, unsat_cores_mode="all"):
     """
     return get_env().factory.UnsatCoreSolver(name=name,
                                              logic=logic,
-                                             unsat_cores_mode=unsat_cores_mode)
+                                             unsat_cores_mode=unsat_cores_mode,
+                                             **kwargs)
 
 
 def QuantifierEliminator(name=None, logic=None):
@@ -958,7 +982,7 @@ def Portfolio(solvers_set, logic, **options):
     E.g.,
       Portfolio(["msat", "z3"], incremental=True)
     or
-      Porfolio([("msat", {"random_seed": 1}), ("msat", {"random_seed": 2})],
+      Portfolio([("msat", {"random_seed": 1}), ("msat", {"random_seed": 2})],
                incremental=True)
 
     Options specified in the Portfolio are shared among all
@@ -978,6 +1002,16 @@ def Portfolio(solvers_set, logic, **options):
                         logic=logic,
                         environment=get_env(),
                         **options)
+
+def Optimizer(name=None, logic=None):
+    """Returns an Optimizer
+
+    :param name: Specify the name of the solver
+    :param logic: Specify the logic that is going to be used.
+    :returns: An Optimizer
+    :rtype: Optimizer
+    """
+    return get_env().factory.Optimizer(name=name, logic=logic)
 
 
 def is_sat(formula, solver_name=None, logic=None, portfolio=None):
@@ -1128,7 +1162,6 @@ def qelim(formula, solver_name=None, logic=None):
     return env.factory.qelim(formula,
                              solver_name=solver_name,
                              logic=logic)
-
 
 def binary_interpolant(formula_a, formula_b, solver_name=None, logic=None):
     """Computes an interpolant of (formula_a, formula_b).

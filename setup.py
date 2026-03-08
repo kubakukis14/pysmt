@@ -27,7 +27,7 @@ The following solvers are supported through native APIs:
 
 * MathSAT (http://mathsat.fbk.eu/)
 * Z3 (https://github.com/Z3Prover/z3/)
-* CVC4 (http://cvc4.cs.nyu.edu/web/)
+* cvc5 (https://cvc5.github.io/)
 * Yices 2 (http://yices.csl.sri.com/)
 * CUDD (http://vlsi.colorado.edu/~fabio/CUDD/)
 * PicoSAT (http://fmv.jku.at/picosat/)
@@ -37,8 +37,6 @@ Additionally, you can use any SMT-LIB 2 compliant solver.
 
 PySMT assumes that the python bindings for the SMT Solver are installed and
 accessible from your PYTHONPATH.
-
-pySMT works on both Python 3 and Python 2.
 
 
 Wanna know more?
@@ -59,11 +57,8 @@ setup(
     license='APACHE',
     description='A solver-agnostic library for SMT Formulae manipulation and solving',
     long_description=long_description,
-    install_requires=["six"],
     entry_points={
         'console_scripts': [
-            'pysmt = pysmt.cmd.shell:main',
-            'pysmt-shell = pysmt.cmd.shell:main_interactive',
             'pysmt-install = pysmt.cmd.install:main',
         ],
     },

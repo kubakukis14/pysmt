@@ -23,12 +23,20 @@ def check_version(module):
             (major, minor, ver, _) = z3.get_version()
             version = "%d.%d.%d" % (major, minor, ver)
 
-        elif module == "msat":
-            import mathsat
-            version_str = mathsat.msat_get_version()
+        elif module in ("msat", "optimsat"):
+            if module == "msat":
+                import mathsat
+                version_str = mathsat.msat_get_version()
+            else:
+                import optimathsat
+                version_str = optimathsat.msat_get_version()
             m = re.match(r"^MathSAT5 version (\d+\.\d+\.\d+) .*$", version_str)
             if m is not None:
                 version = m.group(1)
+            else:
+                m = re.match(r"^MathSAT5 version (\w+) .*$", version_str)
+                if m is not None:
+                    version = m.group(1)
 
         elif module == "cudd":
             import repycudd
@@ -41,6 +49,11 @@ def check_version(module):
             import pyboolector
             version = "OK" # Just checking if import succeeds
 
+        elif module == "cvc5":
+            import cvc5
+            solver = cvc5.Solver()
+            version = solver.getVersion().decode('ascii')
+
         elif module == "cvc4":
             import CVC4
             version = CVC4.Configuration_getVersionString()
@@ -50,11 +63,8 @@ def check_version(module):
             version = picosat.picosat_version()
 
         elif module == "yices":
-            import yicespy
-            v = yicespy.__dict__['__YICES_VERSION']
-            m = yicespy.__dict__['__YICES_VERSION_MAJOR']
-            p = yicespy.__dict__['__YICES_VERSION_PATCHLEVEL']
-            version = "%d.%d.%d" % (v, m, p)
+            import yices_api
+            version = yices_api.yices_python_version
         else:
             print("Invalid argument '%s'"  % module)
             exit(-2)

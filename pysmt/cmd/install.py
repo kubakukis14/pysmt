@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from six.moves import input
-
 import os
 import argparse
 import sys
@@ -22,33 +20,31 @@ import platform
 from collections import namedtuple
 
 from pysmt.cmd.installers import MSatInstaller, Z3Installer, PicoSATInstaller
-from pysmt.cmd.installers import CVC4Installer, YicesInstaller, BtorInstaller
-from pysmt.cmd.installers import CuddInstaller
+from pysmt.cmd.installers import CVC5Installer, YicesInstaller, BtorInstaller
+from pysmt.cmd.installers import CuddInstaller, CVC4Installer, OptiMSatInstaller
 from pysmt.cmd.installers.base import solver_install_site
 
 from pysmt.environment import get_env
 from pysmt.exceptions import PysmtException
-from pysmt import git_version
+from pysmt import __version__ as pysmt_version
 
 # Build a list of installers, one for each solver
 Installer = namedtuple("Installer",
                        ["InstallerClass", "version", "extra_params"])
 INSTALLERS = [
-    Installer(MSatInstaller,    "5.5.1", {}),
+    Installer(MSatInstaller,    "5.6.10", {}),
+    Installer(CVC5Installer,    "1.1.2", {}),
     Installer(CVC4Installer,    "1.7-prerelease",
               {"git_version" : "391ab9df6c3fd9a3771864900c1718534c1e4666"}),
-    Installer(Z3Installer,      "4.8.4",
-              {"osx": "10.14.1", "commit": "d6df51951f4c"}),
-    Installer(YicesInstaller,   "2.6.0",
-              {"yicespy_version": "f0768ffeec15ea310f830d10878971c9998454ac"}),
-    Installer(BtorInstaller,    "3.0.1-pre",
-              {"git_version" : "8062caf14f797a3aa85bf310705973468874e127"}),
+    Installer(Z3Installer,      "4.15.0", {}),
+    Installer(YicesInstaller,   "2.6.4", {"yices_api_version": "1.1.5"}),
+    Installer(BtorInstaller,    "3.2.3", {}),
     Installer(PicoSATInstaller, "965",
               {"pypicosat_minor_version" : "1708010052"}),
     Installer(CuddInstaller,    "2.0.3",
               {"git_version" : "ecb03d6d231273343178f566cc4d7258dcce52b4"}),
+    Installer(OptiMSatInstaller, "1.7.3", {})
 ]
-
 
 
 def get_requested_solvers():
@@ -60,7 +56,8 @@ def get_requested_solvers():
         keys = requested_solvers_str.split(",")
         requested_solvers = [x.lower().strip() for x in keys]
         if "all" in requested_solvers:
-            requested_solvers = [x.InstallerClass.SOLVER for x in INSTALLERS]
+            requested_solvers = [x.InstallerClass.SOLVER for x in INSTALLERS
+                                 if x.InstallerClass.SOLVER != "cvc4"]
     return requested_solvers
 
 
@@ -110,6 +107,9 @@ def check_installed(required_solvers, install_dir, bindings_dir, mirror_link):
     interps = get_env().factory.all_interpolators()
     print("Interpolators: %s" % ", ".join(name for name in interps))
 
+    opts = get_env().factory.all_optimizers()
+    print("Optimizers: %s" % ", ".join(name for name in opts))
+
 
 
 def parse_options():
@@ -119,7 +119,7 @@ def parse_options():
                                      ' variable PYSMT_SOLVER if not already '
                                      'instaled on the system.')
     parser.add_argument('--version', action='version',
-                        version='%(prog)s {version}'.format(version=git_version()))
+                        version='%(prog)s {version}'.format(version=pysmt_version))
 
     for i in INSTALLERS:
         name = i.InstallerClass.SOLVER
@@ -210,7 +210,7 @@ def main():
     all_solvers = options.all_solvers
     for i in INSTALLERS:
         name = i.InstallerClass.SOLVER
-        if all_solvers or getattr(options, name):
+        if (all_solvers and name != "cvc4") or getattr(options, name):
             solvers_to_install.append(i)
 
     # Env variable controlling the solvers to be installed or checked
@@ -259,7 +259,3 @@ def main():
                                          mirror_link=mirror_url,
                                          **i.extra_params)
             installer.install(force_redo=options.force_redo)
-
-
-if __name__ == "__main__":
-    main()

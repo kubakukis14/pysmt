@@ -16,22 +16,53 @@
 #   limitations under the License.
 #
 from functools import partial
-
-from six.moves import xrange, cStringIO
+from io import StringIO
 
 import pysmt.operators as op
 from pysmt.environment import get_env
 from pysmt.walkers import TreeWalker, DagWalker, handles
 from pysmt.utils import quote
 
+def write_annotations(f):
+    def resf(self, formula, *args, **kwargs):
+        annots = self.annotations
+        if annots is not None and formula in annots:
+            self.write("(! ")
+        res = f(self, formula, *args, **kwargs)
+        # all of the items must be yielded to avoid printing out of order
+        if res is not None:
+            for item in res:
+                yield item
+        if annots is not None and formula in annots:
+            for key, values in annots[formula].items():
+                self.write(" :%s" % str(key))
+                for value in values:
+                    self.write(" %s" % str(value))
+            self.write(')')
+    return resf
+
+def write_annotations_dag(f):
+    def resf(self, formula, *args, **kwargs):
+        annots = self.annotations
+        res = f(self, formula, *args, **kwargs)
+        if annots is None or formula not in annots:
+            return res
+        items = list()
+        for key, values in annots[formula].items():
+            items.append(f' :{key}')
+            items.extend(f' {v}' for v in values)
+        kv = ''.join(items)
+        return f'(! {res}{kv})'
+    return resf
 
 class SmtPrinter(TreeWalker):
 
-    def __init__(self, stream):
+    def __init__(self, stream, annotations=None):
         TreeWalker.__init__(self)
         self.stream = stream
         self.write = self.stream.write
         self.mgr = get_env().formula_manager
+        self.annotations = annotations
 
     def printer(self, f):
         self.walk(f)
@@ -40,6 +71,7 @@ class SmtPrinter(TreeWalker):
         """This is a complete printer"""
         raise NotImplementedError
 
+    @write_annotations
     def walk_nary(self, formula, operator):
         self.write("(%s" % operator)
         for s in formula.args():
@@ -87,18 +119,21 @@ class SmtPrinter(TreeWalker):
     def walk_array_select(self, formula): return self.walk_nary(formula, "select")
     def walk_array_store(self, formula): return self.walk_nary(formula, "store")
 
+    @write_annotations
     def walk_symbol(self, formula):
         self.write(quote(formula.symbol_name()))
 
     def walk_function(self, formula):
-        return self.walk_nary(formula, formula.function_name())
+        return self.walk_nary(formula, quote(formula.function_name().symbol_name()))
 
+    @write_annotations
     def walk_int_constant(self, formula):
         if formula.constant_value() < 0:
             self.write("(- " + str(-formula.constant_value()) + ")")
         else:
             self.write(str(formula.constant_value()))
 
+    @write_annotations
     def walk_real_constant(self, formula):
         if formula.constant_value() < 0:
             template = "(- %s)"
@@ -108,21 +143,24 @@ class SmtPrinter(TreeWalker):
         (n,d) = abs(formula.constant_value().numerator), \
                     formula.constant_value().denominator
         if d != 1:
-            res = template % ( "(/ " + str(n) + " " + str(d) + ")" )
+            res = template % ( "(/ " + str(n) + ".0 " + str(d) + ".0)" )
         else:
             res = template % (str(n) + ".0")
 
         self.write(res)
 
+    @write_annotations
     def walk_bool_constant(self, formula):
         if formula.constant_value():
             self.write("true")
         else:
             self.write("false")
 
+    @write_annotations
     def walk_bv_constant(self, formula):
         self.write("#b" + formula.bv_bin_str())
 
+    @write_annotations
     def walk_str_constant(self, formula):
         self.write('"' + formula.constant_value().replace('"', '""') + '"')
 
@@ -132,6 +170,7 @@ class SmtPrinter(TreeWalker):
     def walk_exists(self, formula):
         return self._walk_quantifier("exists", formula)
 
+    @write_annotations
     def _walk_quantifier(self, operator, formula):
         assert len(formula.quantifier_vars()) > 0
         self.write("(%s (" % operator)
@@ -145,6 +184,7 @@ class SmtPrinter(TreeWalker):
         yield formula.arg(0)
         self.write(")")
 
+    @write_annotations
     def walk_bv_extract(self, formula):
         self.write("((_ extract %d %d) " % (formula.bv_extract_end(),
                                             formula.bv_extract_start()))
@@ -152,6 +192,7 @@ class SmtPrinter(TreeWalker):
         self.write(")")
 
     @handles(op.BV_ROR, op.BV_ROL)
+    @write_annotations
     def walk_bv_rotate(self, formula):
         if formula.is_bv_ror():
             rotate_type = "rotate_right"
@@ -164,6 +205,7 @@ class SmtPrinter(TreeWalker):
         self.write(")")
 
     @handles(op.BV_ZEXT, op.BV_SEXT)
+    @write_annotations
     def walk_bv_extend(self, formula):
         if formula.is_bv_zext():
             extend_type = "zero_extend"
@@ -175,11 +217,13 @@ class SmtPrinter(TreeWalker):
         yield formula.arg(0)
         self.write(")")
 
+    @write_annotations
     def walk_str_length(self, formula):
         self.write("(str.len ")
         self.walk(formula.arg(0))
         self.write(")")
 
+    @write_annotations
     def walk_str_charat(self,formula, **kwargs):
         self.write("( str.at " )
         self.walk(formula.arg(0))
@@ -187,6 +231,7 @@ class SmtPrinter(TreeWalker):
         self.walk(formula.arg(1))
         self.write(")")
 
+    @write_annotations
     def walk_str_concat(self,formula, **kwargs):
         self.write("( str.++ " )
         for arg in formula.args():
@@ -194,6 +239,7 @@ class SmtPrinter(TreeWalker):
             self.write(" ")
         self.write(")")
 
+    @write_annotations
     def walk_str_contains(self,formula, **kwargs):
         self.write("( str.contains " )
         self.walk(formula.arg(0))
@@ -201,6 +247,7 @@ class SmtPrinter(TreeWalker):
         self.walk(formula.arg(1))
         self.write(")")
 
+    @write_annotations
     def walk_str_indexof(self,formula, **kwargs):
         self.write("( str.indexof " )
         self.walk(formula.arg(0))
@@ -210,6 +257,7 @@ class SmtPrinter(TreeWalker):
         self.walk(formula.arg(2))
         self.write(")")
 
+    @write_annotations
     def walk_str_replace(self,formula, **kwargs):
         self.write("( str.replace " )
         self.walk(formula.arg(0))
@@ -219,6 +267,7 @@ class SmtPrinter(TreeWalker):
         self.walk(formula.arg(2))
         self.write(")")
 
+    @write_annotations
     def walk_str_substr(self,formula, **kwargs):
         self.write("( str.substr " )
         self.walk(formula.arg(0))
@@ -228,6 +277,7 @@ class SmtPrinter(TreeWalker):
         self.walk(formula.arg(2))
         self.write(")")
 
+    @write_annotations
     def walk_str_prefixof(self,formula, **kwargs):
         self.write("( str.prefixof " )
         self.walk(formula.arg(0))
@@ -235,6 +285,7 @@ class SmtPrinter(TreeWalker):
         self.walk(formula.arg(1))
         self.write(")")
 
+    @write_annotations
     def walk_str_suffixof(self,formula, **kwargs):
         self.write("( str.suffixof " )
         self.walk(formula.arg(0))
@@ -242,6 +293,7 @@ class SmtPrinter(TreeWalker):
         self.walk(formula.arg(1))
         self.write(")")
 
+    @write_annotations
     def walk_str_to_int(self,formula, **kwargs):
         self.write("( str.to.int " )
         self.walk(formula.arg(0))
@@ -250,7 +302,7 @@ class SmtPrinter(TreeWalker):
     def walk_str_to_re(self,formula, **kwargs):
         self.write("( str.to.re " )
         self.walk(formula.arg(0))
-        self.write(")") 
+        self.write(")")
 
     def walk_str_in_re(self,formula, **kwargs):
         self.write("( str.in.re " )
@@ -308,14 +360,16 @@ class SmtPrinter(TreeWalker):
         self.walk(formula.arg(1))
         self.write(")")
 
+    @write_annotations
     def walk_int_to_str(self,formula, **kwargs):
         self.write("( int.to.str " )
         self.walk(formula.arg(0))
         self.write(")")
 
+    @write_annotations
     def walk_array_value(self, formula):
         assign = formula.array_value_assigned_values_map()
-        for _ in xrange(len(assign)):
+        for _ in range(len(assign)):
             self.write("(store ")
 
         self.write("((as const %s) " % formula.get_type().as_smtlib(False))
@@ -332,7 +386,7 @@ class SmtPrinter(TreeWalker):
 
 class SmtDagPrinter(DagWalker):
 
-    def __init__(self, stream, template=".def_%d"):
+    def __init__(self, stream, template=".def_%d", annotations=None):
         DagWalker.__init__(self, invalidate_memoization=True)
         self.stream = stream
         self.write = self.stream.write
@@ -341,6 +395,7 @@ class SmtDagPrinter(DagWalker):
         self.template = template
         self.names = None
         self.mgr = get_env().formula_manager
+        self.annotations = annotations
 
     def _push_with_children_to_stack(self, formula, **kwargs):
         """Add children to the stack."""
@@ -374,6 +429,7 @@ class SmtDagPrinter(DagWalker):
         self.name_seed += 1
         return res
 
+    @write_annotations_dag
     def walk_nary(self, formula, args, operator):
         assert formula is not None
         sym = self._new_symbol()
@@ -502,18 +558,21 @@ class SmtDagPrinter(DagWalker):
     def walk_array_store(self, formula, args):
         return self.walk_nary(formula, args, "store")
 
+    @write_annotations_dag
     def walk_symbol(self, formula, **kwargs):
         return quote(formula.symbol_name())
 
     def walk_function(self, formula, args, **kwargs):
-        return self.walk_nary(formula, args, formula.function_name())
+        return self.walk_nary(formula, args, quote(formula.function_name().symbol_name()))
 
+    @write_annotations_dag
     def walk_int_constant(self, formula, **kwargs):
         if formula.constant_value() < 0:
             return "(- " + str(-formula.constant_value()) + ")"
         else:
             return str(formula.constant_value())
 
+    @write_annotations_dag
     def walk_real_constant(self, formula, **kwargs):
         if formula.constant_value() < 0:
             template = "(- %s)"
@@ -523,10 +582,11 @@ class SmtDagPrinter(DagWalker):
         (n,d) = abs(formula.constant_value().numerator), \
                     formula.constant_value().denominator
         if d != 1:
-            return template % ( "(/ " + str(n) + " " + str(d) + ")" )
+            return template % ( "(/ " + str(n) + ".0 " + str(d) + ".0)" )
         else:
             return template % (str(n) + ".0")
 
+    @write_annotations_dag
     def walk_bv_constant(self, formula, **kwargs):
         short_res = str(bin(formula.constant_value()))[2:]
         if formula.constant_value() >= 0:
@@ -537,12 +597,14 @@ class SmtDagPrinter(DagWalker):
         return "#b" + res
 
 
+    @write_annotations_dag
     def walk_bool_constant(self, formula, **kwargs):
         if formula.constant_value():
             return "true"
         else:
             return "false"
 
+    @write_annotations_dag
     def walk_str_constant(self, formula, **kwargs):
         return '"' + formula.constant_value().replace('"', '""') + '"'
 
@@ -552,6 +614,7 @@ class SmtDagPrinter(DagWalker):
     def walk_exists(self, formula, args, **kwargs):
         return self._walk_quantifier("exists", formula, args)
 
+    @write_annotations_dag
     def _walk_quantifier(self, operator, formula, args):
         assert args is None
         assert len(formula.quantifier_vars()) > 0
@@ -572,6 +635,7 @@ class SmtDagPrinter(DagWalker):
         self.write(")))")
         return sym
 
+    @write_annotations_dag
     def walk_bv_extract(self, formula, args, **kwargs):
         assert formula is not None
         sym = self._new_symbol()
@@ -586,6 +650,7 @@ class SmtDagPrinter(DagWalker):
         return sym
 
     @handles(op.BV_SEXT, op.BV_ZEXT)
+    @write_annotations_dag
     def walk_bv_extend(self, formula, args, **kwargs):
         #pylint: disable=unused-argument
         if formula.is_bv_zext():
@@ -605,6 +670,7 @@ class SmtDagPrinter(DagWalker):
         return sym
 
     @handles(op.BV_ROR, op.BV_ROL)
+    @write_annotations_dag
     def walk_bv_rotate(self, formula, args, **kwargs):
         #pylint: disable=unused-argument
         if formula.is_bv_ror():
@@ -623,12 +689,15 @@ class SmtDagPrinter(DagWalker):
         self.write("))) ")
         return sym
 
+    @write_annotations_dag
     def walk_str_length(self, formula, args, **kwargs):
         return "(str.len %s)" % args[0]
 
+    @write_annotations_dag
     def walk_str_charat(self,formula, args,**kwargs):
         return "( str.at %s %s )" % (args[0], args[1])
 
+    @write_annotations_dag
     def walk_str_concat(self, formula, args, **kwargs):
         sym = self._new_symbol()
         self.openings += 1
@@ -639,24 +708,31 @@ class SmtDagPrinter(DagWalker):
         self.write("))) ")
         return sym
 
+    @write_annotations_dag
     def walk_str_contains(self,formula, args, **kwargs):
         return "( str.contains %s %s)" % (args[0], args[1])
 
+    @write_annotations_dag
     def walk_str_indexof(self,formula, args, **kwargs):
         return "( str.indexof %s %s %s )" % (args[0], args[1], args[2])
 
+    @write_annotations_dag
     def walk_str_replace(self,formula, args, **kwargs):
         return "( str.replace %s %s %s )" % (args[0], args[1], args[2])
 
+    @write_annotations_dag
     def walk_str_substr(self,formula, args,**kwargs):
         return "( str.substr %s %s %s)" % (args[0], args[1], args[2])
 
+    @write_annotations_dag
     def walk_str_prefixof(self,formula, args,**kwargs):
         return "( str.prefixof %s %s )" % (args[0], args[1])
 
+    @write_annotations_dag
     def walk_str_suffixof(self,formula, args, **kwargs):
         return "( str.suffixof %s %s )" % (args[0], args[1])
 
+    @write_annotations_dag
     def walk_str_to_int(self,formula, args, **kwargs):
         return "( str.to.int %s )" % args[0]
     
@@ -696,19 +772,21 @@ class SmtDagPrinter(DagWalker):
 
     def walk_re_union(self,formula, args, **kwargs):
         return "( re.union %s %s )" % (args[0], args[1])
-    
+
     def walk_re_inter(self,formula, args, **kwargs):
         return "( re.inter %s %s )" % (args[0], args[1])
-    
+
+    @write_annotations_dag
     def walk_int_to_str(self,formula, args, **kwargs):
         return "( int.to.str %s )" % args[0]
 
+    @write_annotations_dag
     def walk_array_value(self, formula, args, **kwargs):
         sym = self._new_symbol()
         self.openings += 1
         self.write("(let ((%s " % sym)
 
-        for _ in xrange((len(args) - 1) // 2):
+        for _ in range((len(args) - 1) // 2):
             self.write("(store ")
 
         self.write("((as const %s) " % formula.get_type().as_smtlib(False))
@@ -735,7 +813,7 @@ def to_smtlib(formula, daggify=True):
 
     See :py:class:`SmtPrinter`
     """
-    buf = cStringIO()
+    buf = StringIO()
     p = None
     if daggify:
         p = SmtDagPrinter(buf)

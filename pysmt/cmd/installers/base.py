@@ -17,17 +17,14 @@ import sys
 import shutil
 import zipfile
 import tarfile
-import six
 import struct
 import subprocess
+import urllib.request
 
 from contextlib import contextmanager
-from distutils import spawn
-from distutils.dist import Distribution
+from setuptools import Distribution
 
-import six.moves
-from six.moves import xrange
-from six.moves.urllib.error import HTTPError, URLError
+from urllib.error import HTTPError, URLError
 
 
 @contextmanager
@@ -101,8 +98,8 @@ class SolverInstaller(object):
 
     def download(self):
         """Downloads the archive from one of the mirrors"""
-        if not os.path.exists(self.archive_path):
-            for turn in xrange(self.trials_404):
+        if self.archive_path and not os.path.exists(self.archive_path):
+            for turn in range(self.trials_404):
                 for i, link in enumerate(self.download_links()):
                     try:
                         return self.do_download(link, self.archive_path)
@@ -118,15 +115,16 @@ class SolverInstaller(object):
 
     def unpack(self):
         """Unpacks the archive"""
-        path = self.archive_path
-        if path.endswith(".zip"):
-            SolverInstaller.unzip(path, directory=self.base_dir)
-        elif path.endswith(".tar.bz2"):
-            SolverInstaller.untar(path, directory=self.base_dir, mode='r:bz2')
-        elif path.endswith(".tar.gz"):
-            SolverInstaller.untar(path, directory=self.base_dir)
-        else:
-            raise ValueError("Unsupported archive for extraction: %s" % path)
+        if self.archive_path:
+            path = self.archive_path
+            if path.endswith(".zip"):
+                SolverInstaller.unzip(path, directory=self.base_dir)
+            elif path.endswith(".tar.bz2"):
+                SolverInstaller.untar(path, directory=self.base_dir, mode='r:bz2')
+            elif path.endswith(".tar.gz"):
+                SolverInstaller.untar(path, directory=self.base_dir)
+            else:
+                raise ValueError("Unsupported archive for extraction: %s" % path)
 
     def compile(self):
         """Performs the compilation if needed"""
@@ -163,7 +161,7 @@ class SolverInstaller(object):
     @staticmethod
     def do_download(url, file_name):
         """Downloads the given url into the given file name"""
-        u = six.moves.urllib.request.urlopen(url)
+        u = urllib.request.urlopen(url)
         f = open(file_name, 'wb')
         meta = u.info()
         if meta.get("Content-Length") and len(meta.get("Content-Length")) > 0:
@@ -210,7 +208,7 @@ class SolverInstaller(object):
         """Executes an arbitrary program"""
         environment = os.environ.copy()
         if env_variables is not None:
-            for k,v in six.iteritems(env_variables):
+            for k,v in env_variables.items():
                 environment[k] = v
 
         stderr = None
@@ -306,14 +304,14 @@ class SolverInstaller(object):
         command = None
         for alt in alternatives:
             name = command_tplate % alt
-            command = spawn.find_executable(name)
+            command = shutil.which(name)
             if command is not None:
                 break
         return command
 
 
 def package_install_site(name='', user=False, plat_specific=False):
-    """pip-inspired, distutils-based method for fetching the
+    """pip-inspired method for fetching the
     default install location (site-packages path).
 
     Returns virtual environment or system site-packages, unless

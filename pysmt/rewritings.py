@@ -162,7 +162,7 @@ class CNFizer(DagWalker):
             return CNFizer.THEORY_PLACEHOLDER
 
     def walk_function(self, formula, **kwargs):
-        ty = formula.function_symbol().symbol_type()
+        ty = formula.function_name().symbol_type()
         if ty.return_type.is_bool_type():
             return formula, CNFizer.TRUE_CNF
         else:
@@ -188,6 +188,8 @@ class CNFizer(DagWalker):
     @handles(op.THEORY_OPERATORS)
     def walk_theory_op(self, formula, **kwargs):
         #pylint: disable=unused-argument
+        if formula.get_type().is_bool_type():
+            return formula, CNFizer.TRUE_CNF
         return CNFizer.THEORY_PLACEHOLDER
 
     @handles(op.CONSTANTS)
@@ -242,7 +244,7 @@ class NNFizer(DagWalker):
         return self.walk(formula)
 
     def _get_children(self, formula):
-        """Returns the arguments of the node on which an hypotetical recursion
+        """Returns the arguments of the node on which an hypothetical recursion
         would be made, possibly negating them.
         """
         mgr = self.mgr
@@ -608,6 +610,7 @@ class AIGer(DagWalker):
 
 from itertools import product
 
+
 class TimesDistributor(IdentityDagWalker):
     """Normalize the use of multiplication by pushing it into the leafs.
 
@@ -662,14 +665,13 @@ class TimesDistributor(IdentityDagWalker):
         else:
             assert expr_type.is_int_type()
             minus_one = self.iminus_one
-        Times = self.Times
         lhs, rhs = args
-        if not rhs.is_plus():
-            return self.Plus(lhs, Times(minus_one, rhs))
-        new_args = [lhs]
-        for r in rhs.args():
-            new_args.append(Times(minus_one, r))
-            return self.Plus(new_args)
+        # we assume that rhs is either a sum or times cannot distribute.
+        rhs = [rhs] if not rhs.is_plus() else list(rhs.args())
+        # we need to keep the plus flat: no nested sums (see walk_times).
+        new_args = [lhs] if not lhs.is_plus() else list(lhs.args())
+        new_args.extend(self.Times(minus_one, r) for r in rhs)
+        return self.Plus(new_args)
 
 # EOC TimesDistributivity
 
@@ -770,12 +772,12 @@ class Ackermannizer(IdentityDagWalker):
 
 class DisjointSet(object):
     """A simple implementation of the DisjointSet data-structure.
-    
+
     It supports also ranking-based DisjointSet and it can be enabled
-    by: 
+    by:
 
     1. defining a binary compare function for the  to be stored in
-    a DisjointSet. 
+    a DisjointSet.
 
     2. Set the compare function while creating the DisjointSet object.
     """
@@ -915,7 +917,7 @@ def propagate_toplevel(formula, env=None, do_simplify=True, preserve_equivalence
 
     disjoint_set = DisjointSet(compare_fun=compare)
     relevant = set()
-    
+
     for c in conjunctive_partition(formula):
         if c.is_equals():
             l, r = c.args()

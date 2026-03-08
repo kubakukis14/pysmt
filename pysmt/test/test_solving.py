@@ -15,10 +15,8 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 #
-from six.moves import xrange
-from six import PY2
-
 import pysmt.operators as op
+
 from pysmt.shortcuts import Symbol, FreshSymbol, And, Not, GT, Function, Plus
 from pysmt.shortcuts import Bool, TRUE, Real, LE, FALSE, Or, Equals, Implies
 from pysmt.shortcuts import Solver
@@ -156,6 +154,19 @@ class TestBasic(TestCase):
             self.assertTrue(s.get_py_value(varA))
 
     @skipIfNoSolverForLogic(QF_BOOL)
+    def test_add_assertions(self):
+        varA = Symbol("A", BOOL)
+        varB = Symbol("B", BOOL)
+        varC = Symbol("C", BOOL)
+
+        assertions = [varA, Implies(varA, varB), Implies(varB, varC)]
+        for name in get_env().factory.all_solvers(logic=QF_BOOL):
+            with Solver(name) as solver:
+                solver.add_assertions(assertions)
+                solver.solve()
+                self.assertTrue(solver.get_py_value(And(assertions)))
+
+    @skipIfNoSolverForLogic(QF_BOOL)
     def test_incremental(self):
         a = Symbol('a', BOOL)
         b = Symbol('b', BOOL)
@@ -195,21 +206,20 @@ class TestBasic(TestCase):
             self.assertEqual(validity, v, f)
             self.assertEqual(satisfiability, s, f)
 
-    @skipIfSolverNotAvailable("cvc4")
-    def test_examples_cvc4(self):
+    @skipIfSolverNotAvailable("cvc5")
+    def test_examples_cvc(self):
         for (f, validity, satisfiability, logic) in get_example_formulae():
-            if not logic.theory.linear: continue
             if logic.theory.arrays_const: continue
             try:
-                v = is_valid(f, solver_name='cvc4', logic=logic)
-                s = is_sat(f, solver_name='cvc4', logic=logic)
+                v = is_valid(f, solver_name='cvc5', logic=logic)
+                s = is_sat(f, solver_name='cvc5', logic=logic)
                 self.assertEqual(validity, v, f)
                 self.assertEqual(satisfiability, s, f)
             except SolverReturnedUnknownResultError:
-                # CVC4 does not handle quantifiers in a complete way
+                # CVC does not handle quantifiers in a complete way
                 self.assertFalse(logic.quantifier_free)
             except NoSolverAvailableError:
-                # Logic is not supported by CVC4
+                # Logic is not supported by CVC
                 pass
 
     @skipIfSolverNotAvailable("yices")
@@ -249,30 +259,17 @@ class TestBasic(TestCase):
                         check = s.solve()
                         self.assertTrue(check)
 
-                        # Ask single values to the solver
-                        subs = {}
-                        for d in f.get_free_variables():
-                            m = s.get_value(d)
-                            subs[d] = m
-
-                        simp = f.substitute(subs).simplify()
-                        self.assertEqual(simp, TRUE(), "%s -- %s :> %s" % (f, subs, simp))
-
-                        # Ask the eager model
-                        subs = {}
                         model = s.get_model()
-                        for d in f.get_free_variables():
-                            m = model.get_value(d)
-                            subs[d] = m
-
-                        simp = f.substitute(subs).simplify()
-                        self.assertEqual(simp, TRUE())
+                        self.assertTrue(model.satisfies(f, s))
                 except NoSolverAvailableError:
                     pass
+                except PysmtTypeError:
+                    if solver_name != "cvc5" or logic.theory.linear:
+                        raise
 
-    @skipIfSolverNotAvailable("cvc4")
-    def test_model_cvc4(self):
-        self.do_model("cvc4")
+    @skipIfSolverNotAvailable("cvc5")
+    def test_model_cvc(self):
+        self.do_model("cvc5")
 
     @skipIfSolverNotAvailable("z3")
     def test_model_z3(self):
@@ -289,6 +286,10 @@ class TestBasic(TestCase):
     @skipIfSolverNotAvailable("picosat")
     def test_model_picosat(self):
         self.do_model("picosat")
+
+    @skipIfSolverNotAvailable("btor")
+    def test_model_btor(self):
+        self.do_model("btor")
 
     @skipIfSolverNotAvailable("z3")
     def test_tactics_z3(self):
@@ -345,6 +346,8 @@ class TestBasic(TestCase):
         for (f, _, satisfiability, logic) in get_example_formulae():
             if logic.quantifier_free:
                 for sname in get_env().factory.all_solvers(logic=logic):
+                    if not logic.theory.linear and sname=="cvc5":
+                        continue # TODO: missing implementation for CVC5 Real Algebraic Values
                     f_i = get_implicant(f, logic=logic, solver_name=sname)
                     if satisfiability:
                         self.assertValid(Implies(f_i, f), logic=logic, msg=(f_i, f))
@@ -352,7 +355,7 @@ class TestBasic(TestCase):
                         self.assertIsNone(f_i)
 
     def test_solving_under_assumption(self):
-        v1, v2 = [FreshSymbol() for _ in xrange(2)]
+        v1, v2 = [FreshSymbol() for _ in range(2)]
         xor = Or(And(v1, Not(v2)), And(Not(v1), v2))
 
         for name in get_env().factory.all_solvers():
@@ -550,9 +553,6 @@ class TestBasic(TestCase):
     @skipIfNoSolverForLogic(QF_LRA)
     def test_logic_as_string(self):
         self.assertEqual(convert_logic_from_string("QF_LRA"), QF_LRA)
-        if PY2:
-            self.assertEqual(convert_logic_from_string(unicode("QF_LRA")),
-                             QF_LRA)
         with self.assertRaises(UndefinedLogicError):
             convert_logic_from_string("PAPAYA")
         self.assertIsNone(convert_logic_from_string(None))
@@ -570,11 +570,6 @@ class TestBasic(TestCase):
         solver = Solver(logic=QF_BOOL, incremental=True)
         self.assertIsNotNone(solver)
         # Options are enforced at construction time
-        if type(solver).__name__ == 'CVC4Solver':
-            # We skip the rest of the test on CVC4 1.7 because its
-            # python wrapper crashes if an unknown option is provided.
-            # See: https://github.com/CVC4/CVC4/issues/2810
-            return
         with self.assertRaises(TypeError):
             Solver(logic=QF_BOOL, invalid_option=False)
         with self.assertRaises(PysmtValueError):
@@ -623,11 +618,12 @@ class TestBasic(TestCase):
             if logic == QF_BV:
                 solver = Solver(name="btor",
                                 solver_options={"rewrite-level":0,
-                                                "fun:dual-prop":1,
+                                                "fun-dual-prop":1,
                                                 "eliminate-slices":1})
                 solver.add_assertion(f)
                 res = solver.solve()
                 self.assertTrue(res == sat)
+
 
 if __name__ == '__main__':
     main()

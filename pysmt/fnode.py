@@ -22,7 +22,7 @@ import pysmt.smtlib
 from pysmt.operators import (FORALL, EXISTS, AND, OR, NOT, IMPLIES, IFF,
                              SYMBOL, FUNCTION,
                              REAL_CONSTANT, BOOL_CONSTANT, INT_CONSTANT,
-                             PLUS, MINUS, TIMES,
+                             PLUS, MINUS, TIMES, DIV,
                              LE, LT, EQUALS,
                              ITE,
                              TOREAL,
@@ -38,11 +38,6 @@ from pysmt.operators import (FORALL, EXISTS, AND, OR, NOT, IMPLIES, IFF,
                              BV_SDIV, BV_SREM,
                              BV_ASHR,
                              STR_CONSTANT,
-                             STR_LENGTH, STR_CONCAT, STR_CONTAINS,
-                             STR_INDEXOF, STR_REPLACE, STR_SUBSTR,
-                             STR_PREFIXOF, STR_SUFFIXOF,
-                             STR_TO_INT, INT_TO_STR,
-                             STR_CHARAT,
                              ARRAY_SELECT, ARRAY_STORE, ARRAY_VALUE,
                              ALGEBRAIC_CONSTANT)
 
@@ -54,8 +49,7 @@ from pysmt.operators import  (BOOL_OPERATORS, THEORY_OPERATORS,
 from pysmt.typing import BOOL, REAL, INT, BVType, STRING
 from pysmt.decorators import deprecated, assert_infix_enabled
 from pysmt.utils import twos_complement
-from pysmt.constants import (Fraction, is_python_integer,
-                             is_python_rational, is_python_boolean)
+from pysmt.constants import is_python_integer
 from pysmt.exceptions import (PysmtValueError, PysmtModeError,
                               UnsupportedOperatorError)
 
@@ -67,7 +61,7 @@ class FNode(object):
     r"""FNode represent the basic structure for representing a formula.
 
     FNodes are built using the FormulaManager, and should not be
-    explicitely instantiated, since the FormulaManager takes care of
+    explicitly instantiated, since the FormulaManager takes care of
     memoization, thus guaranteeing that equivalent are represented by
     the same object.
 
@@ -121,13 +115,15 @@ class FNode(object):
         """Return a simplified version of the formula."""
         return _env().simplifier.simplify(self)
 
-    def substitute(self, subs):
+    def substitute(self, subs, interpretations=None):
         """Return a formula in which subformula have been substituted.
 
-        subs is a dictionary mapping terms to be subtituted with their
+        subs is a dictionary mapping terms to be substituted with their
         substitution.
+        interpretations is a dictionary mapping function symbols to an FunctionInterpretation objects describing the semantics of the function.
         """
-        return _env().substituter.substitute(self, subs=subs)
+        return _env().substituter.substitute(self, subs=subs,
+                                             interpretations=interpretations)
 
     def size(self, measure=None):
         """Return the size of the formula according to the given metric.
@@ -298,6 +294,10 @@ class FNode(object):
     def is_times(self):
         """Test whether the node is the Times operator."""
         return self.node_type() == TIMES
+
+    def is_div(self):
+        """Test whether the node is the Division operator."""
+        return self.node_type() == DIV
 
     def is_implies(self):
         """Test whether the node is the Implies operator."""
@@ -569,7 +569,7 @@ class FNode(object):
 
     def constant_value(self):
         """Return the value of the Constant."""
-        assert self.is_constant()
+        assert self.is_constant(), "%s is not a constant" % str(self)
         if self.node_type() == BV_CONSTANT:
             return self._content.payload[0]
         return self._content.payload
@@ -683,14 +683,7 @@ class FNode(object):
     def algebraic_approx_value(self, precision=10):
         value = self.constant_value()
         approx = value.approx(precision)
-        # MG: This is a workaround python 3 since Z3 mixes int and long.
-        #     The bug was fixed in master of Z3, but no official relase
-        #     has been done containing it.
-        # In the most recent version of z3, this can be done with:
-        #   return approx.as_fraction()
-        n = int(str(approx.numerator()))
-        d = int(str(approx.denominator()))
-        return Fraction(n,d)
+        return approx.as_fraction()
 
     # Infix Notation
     @assert_infix_enabled

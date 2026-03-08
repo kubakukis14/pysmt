@@ -26,23 +26,26 @@ class MSatInstaller(SolverInstaller):
                  mirror_link=None):
 
         # Getting the right archive name
-        os_name = self.os_name
-        arch = self.architecture
-        ext = "tar.gz"
-        if os_name == "windows":
-            ext = "zip"
-            arch = "msvc"
-            if self.architecture == "x86_64":
-                os_name = "win64"
-            else:
-                os_name = "win32"
-        elif os_name == "darwin":
-            os_name = "darwin-libcxx"
+        archive_name_template = "mathsat-{version}-{os}-{arch}.{ext}"
+        format = {
+                "version": solver_version,
+                "os" : self.os_name,
+                "arch": self.architecture,
+                "ext": "tar.gz"
+        }
+        if self.os_name == "windows":
+            format["ext"] = "zip"
+            format["arch"] = "msvc"
+            format["os"] = "win64" if self.architecture == "x86_64" else "win32"
+        elif self.os_name == "darwin":
+            # Since version 5.6.7 the architecture is not included in the
+            # pkg name for the OSX release as it is considered a "univeral binary"
+            archive_name_template = "mathsat-{version}-{os}.{ext}"
+            format["os"] = "osx"
 
-        archive_name = "mathsat-%s-%s-%s.%s" % (solver_version, os_name,
-                                                arch, ext)
+        archive_name = archive_name_template.format(**format)
 
-        native_link = "http://mathsat.fbk.eu/download.php?file={archive_name}"
+        native_link = "https://mathsat.fbk.eu/release/{archive_name}"
 
         SolverInstaller.__init__(self, install_dir=install_dir,
                                  bindings_dir=bindings_dir,
@@ -100,10 +103,10 @@ class MSatInstaller(SolverInstaller):
             if f.endswith(".so") or f.endswith(".dll") or f.endswith(".dylib"):
                 SolverInstaller.mv(os.path.join(libdir, f), self.bindings_dir)
 
-        # Fix issue in MathSAT 5.5.1 linking to incorrect directory on OSX
+        # Fix issue in MathSAT 5.6.10 linking to incorrect directory on OSX
         if self.os_name == "darwin":
             soname = glob.glob(self.bindings_dir + "/_mathsat*.so")[0]
-            old_path = "/Users/griggio/Documents/src/mathsat_release/build/libmathsat.dylib"
+            old_path = "/Users/alb/src/release/build/libmathsat.dylib"
             new_path = "%s/libmathsat.dylib" % self.bindings_dir
             SolverInstaller.run("install_name_tool -change %s %s %s" %
                                 (old_path, new_path, soname))
